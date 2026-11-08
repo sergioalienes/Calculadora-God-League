@@ -35,6 +35,8 @@ from modules.ui_responsive import ResponsiveGrid
 APP_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
 PROFILES_ROOT = APP_ROOT / "profiles"
 CHAMPIONSHIP_FILE = "_campeonato.json"
+# Ficheros auxiliares que acompañan a cada <circuito>.json (no son circuitos)
+CIRCUIT_AUX_SUFFIXES = ("_fuel_models", "_tyre_models", "_strategies", "_fuel", "_tyres", "_live")
 
 
 class ChampionshipDataModule(ctk.CTkFrame):
@@ -64,6 +66,7 @@ class ChampionshipDataModule(ctk.CTkFrame):
         self._var_car_lift        = ctk.StringVar(value="2.0")
         self._var_compound_1      = ctk.StringVar(value="Prime (Duro)")
         self._var_compound_2      = ctk.StringVar(value="Alternative (Blando)")
+        self._var_mandatory_change = ctk.BooleanVar(value=True)
 
         # ── StringVars: Circuito (variables) ─────────────────
         self._var_circuit         = ctk.StringVar(value="")
@@ -268,9 +271,20 @@ class ChampionshipDataModule(ctk.CTkFrame):
             self._build_inline_field(parent, row=i + 1, label=label, desc=desc,
                                      var=var, field_id=fid, validate_fn=validate_fn, unit=unit)
 
+        # Reglamento: obligación de usar ambos compuestos (implica al menos 1 parada)
+        ctk.CTkCheckBox(
+            parent,
+            text="Reglamento: obligatorio usar ambos compuestos en carrera",
+            variable=self._var_mandatory_change,
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            text_color=self.colors["text_primary"],
+            fg_color=self.colors["accent"], hover_color=self.colors["accent_hover"],
+            border_color=self.colors["border"],
+        ).grid(row=len(fields) + 1, column=0, sticky="w", padx=20, pady=(8, 0))
+
         # Botones guardar / cancelar
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.grid(row=len(fields) + 1, column=0, pady=(10, 16), padx=20, sticky="w")
+        btn_row.grid(row=len(fields) + 2, column=0, pady=(10, 16), padx=20, sticky="w")
 
         ctk.CTkButton(
             btn_row, text="💾 Guardar Campeonato", height=38, corner_radius=8,
@@ -614,10 +628,18 @@ class ChampionshipDataModule(ctk.CTkFrame):
         champ_dir = PROFILES_ROOT / championship
         if not champ_dir.exists():
             return []
-        return sorted(
-            p.stem for p in champ_dir.glob("*.json")
-            if p.name != CHAMPIONSHIP_FILE
-        )
+        stems = {p.stem for p in champ_dir.glob("*.json") if p.name != CHAMPIONSHIP_FILE}
+
+        # Excluir los ficheros auxiliares de cada circuito (<circuito>_fuel.json, _live.json…):
+        # solo cuando existe el <circuito>.json base, para no ocultar un circuito real
+        # cuyo nombre termine casualmente en uno de esos sufijos.
+        def _is_aux(stem: str) -> bool:
+            for suf in CIRCUIT_AUX_SUFFIXES:
+                if stem.endswith(suf) and stem[: -len(suf)] in stems:
+                    return True
+            return False
+
+        return sorted(s for s in stems if not _is_aux(s))
 
     def _on_championship_selected(self, name: str):
         """Callback al seleccionar un campeonato en el ComboBox."""
@@ -647,6 +669,7 @@ class ChampionshipDataModule(ctk.CTkFrame):
         compounds = data.get("tyre_compounds", ["Prime (Duro)", "Alternative (Blando)"])
         self._var_compound_1.set(compounds[0] if len(compounds) > 0 else "")
         self._var_compound_2.set(compounds[1] if len(compounds) > 1 else "")
+        self._var_mandatory_change.set(bool(data.get("mandatory_compound_change", True)))
 
         # Actualizar resumen
         self._build_summary_cards(self._champ_summary_frame, {
@@ -657,6 +680,7 @@ class ChampionshipDataModule(ctk.CTkFrame):
             "⏱️ Levantar":   f"{data.get('car_lift_s', 2.0)} s",
             "⏳ Duración":   f"{data.get('race_duration_min', '—')} min",
             "🏆 Compuestos":  f"{compounds[0]} / {compounds[1] if len(compounds) > 1 else '—'}",
+            "📋 Reglamento": "Ambos compuestos" if data.get("mandatory_compound_change", True) else "Compuesto libre",
         })
 
         # Mostrar botones editar, borrar y activar paso 2
@@ -681,6 +705,7 @@ class ChampionshipDataModule(ctk.CTkFrame):
         self._var_race_duration.set("60")
         self._var_compound_1.set("Prime (Duro)")
         self._var_compound_2.set("Alternative (Blando)")
+        self._var_mandatory_change.set(True)
         self._toggle_champ_form(force_open=True)
 
     def _toggle_champ_form(self, force_open=False, force_close=False, _event=None):
@@ -723,16 +748,16 @@ class ChampionshipDataModule(ctk.CTkFrame):
         data = {
             "name": name,
             "car": self._var_car.get().strip(),
-            "fuel_capacity_l": float(self._var_fuel_capacity.get()),
-            "refuel_rate_ls": float(self._var_refuel_rate.get()),
-            "tyre_change_s": float(self._var_tyre_change.get()),
-            "car_lift_s": float(self._var_car_lift.get()),
-            "race_duration_min": float(self._var_race_duration.get()),
+            "fuel_capacity_l": float(self._var_fuel_capacity.get().replace(",", ".")),
+            "refuel_rate_ls": float(self._var_refuel_rate.get().replace(",", ".")),
+            "tyre_change_s": float(self._var_tyre_change.get().replace(",", ".")),
+            "car_lift_s": float(self._var_car_lift.get().replace(",", ".")),
+            "race_duration_min": float(self._var_race_duration.get().replace(",", ".")),
             "tyre_compounds": [
                 self._var_compound_1.get().strip(),
                 self._var_compound_2.get().strip(),
             ],
-            "mandatory_compound_change": True,
+            "mandatory_compound_change": bool(self._var_mandatory_change.get()),
         }
         (champ_dir / CHAMPIONSHIP_FILE).write_text(
             json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -869,7 +894,7 @@ class ChampionshipDataModule(ctk.CTkFrame):
         data = {
             "circuit":         circuit_name,
             "lap_time":        self._var_lap_time.get().strip(),
-            "pitlane_loss_s":  float(self._var_pitlane_loss.get()),
+            "pitlane_loss_s":  float(self._var_pitlane_loss.get().replace(",", ".")),
             "track_length_km": trk_len,
             "sc_speed_kmh":    sc_spd,
             "sc_pace_s":       sc_pace_s,
@@ -950,8 +975,8 @@ class ChampionshipDataModule(ctk.CTkFrame):
             "circuit":                  circuit,
             "lap_time_str":             lap_raw,
             "lap_time_seconds":         self._lap_time_to_seconds(lap_raw),
-            "pitlane_loss":             float(self._var_pitlane_loss.get()),
-            "pitlane_loss_s":           float(self._var_pitlane_loss.get()),
+            "pitlane_loss":             float(self._var_pitlane_loss.get().replace(",", ".")),
+            "pitlane_loss_s":           float(self._var_pitlane_loss.get().replace(",", ".")),
             "track_length_km":          trk_len,
             "sc_speed_kmh":             sc_spd,
             "sc_pace_s":                sc_pace_s,
@@ -1100,6 +1125,7 @@ class ChampionshipDataModule(ctk.CTkFrame):
                 f"{safe}_fuel_models.json",
                 f"{safe}_tyre_models.json",
                 f"{safe}_strategies.json",
+                f"{safe}_live.json",
             ]:
                 f = champ_dir / ext
                 if f.exists():

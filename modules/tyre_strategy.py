@@ -1084,7 +1084,12 @@ class TyreStrategyModule(ctk.CTkFrame):
         pitlane_loss = float(self.session_data.get("pitlane_loss", 22.5))
         cons_lap     = float(self.fuel_data.get("cons_lap", 2.15))
         safety_fuel  = float(self.fuel_data.get("safety_fuel_l") or self.fuel_data.get("calc_results", {}).get("safety_fuel_l", 2.5))
-        weight_sens  = float(self.fuel_data.get("weight_sens") or self.fuel_data.get("calc_results", {}).get("weight_sens") or self.session_data.get("weight_sens", 0.015))
+        weight_sens = self.fuel_data.get("weight_sens")
+        if weight_sens is None:
+            weight_sens = self.fuel_data.get("calc_results", {}).get("weight_sens")
+        if weight_sens is None:
+            weight_sens = self.session_data.get("weight_sens", 0.015)
+        weight_sens = float(weight_sens)
 
         st1_comp = self._var_stint1_tyre.get()
         st2_comp = self._var_stint2_tyre.get()
@@ -1104,7 +1109,13 @@ class TyreStrategyModule(ctk.CTkFrame):
         if num_stops == 2:
             used_comps.add(st3_comp)
 
-        if "hard" in used_comps and "soft" in used_comps:
+        mandatory = bool(self.session_data.get("mandatory_compound_change", True))
+        if not mandatory:
+            self._lbl_reg_alert.configure(
+                text="ℹ️ Reglamento sin obligación de usar ambos compuestos: cualquier combinación es legal.",
+                text_color=self.colors["text_secondary"],
+            )
+        elif "hard" in used_comps and "soft" in used_comps:
             self._lbl_reg_alert.configure(
                 text="✅ Cumple normativa de reglamento: ambos compuestos obligatorios utilizados (Dura y Blanda).",
                 text_color="#51CF66"

@@ -887,8 +887,8 @@ class PilotLiveCard(ctk.CTkFrame):
         # Calcular consumo de la vuelta
         tank_cap = float(self.parent_module.session_data.get("fuel_capacity_l", 70.0))
         if not self.meta_records:
-            # Primera vuelta registrada
-            cons = max(0.0, tank_cap - fuel_val)
+            # Primer registro: consumo medio desde la salida (depósito lleno) hasta esta vuelta
+            cons = max(0.0, (tank_cap - fuel_val) / max(1, lap_num))
         else:
             prev = self.meta_records[-1]
             if lap_num > prev["lap"]:
@@ -954,7 +954,7 @@ class PilotLiveCard(ctk.CTkFrame):
             tank_cap = float(self.parent_module.session_data.get("fuel_capacity_l", 70.0))
             for i, r in enumerate(self.meta_records):
                 if i == 0:
-                    r["cons"] = max(0.0, tank_cap - r["fuel"])
+                    r["cons"] = max(0.0, (tank_cap - r["fuel"]) / max(1, r["lap"]))
                 else:
                     prev = self.meta_records[i - 1]
                     d_laps = max(1, r["lap"] - prev["lap"])
@@ -1122,13 +1122,13 @@ class PilotLiveCard(ctk.CTkFrame):
         # 4. Próxima parada y cálculo dinámico de litros a echar / margen en meta
         if not is_last_stint:
             f_at_box = max(0.0, curr_fuel - (laps_to_target * obs_cons))
-            if num_stops == 2 and curr_lap < p1:
+            if num_stops == 2 and curr_lap <= p1:
                 next_stint_laps = p2 - p1
                 f_needed_next = (next_stint_laps * obs_cons) + safety_l
                 litros_a_cargar = min(tank_cap - f_at_box, max(0.0, f_needed_next - f_at_box))
                 self._lbl_next_pit.configure(text=f"Box 1: Fin V{p1} (en {laps_to_target}v)")
                 self._lbl_refuel_calc.configure(text=f"Cargar: {litros_a_cargar:.1f} L", text_color=self.colors["accent"])
-            elif num_stops == 2 and curr_lap < p2:
+            elif num_stops == 2 and curr_lap <= p2:
                 next_stint_laps = tot_laps - p2
                 f_needed_next = (next_stint_laps * obs_cons) + safety_l
                 litros_a_cargar = min(tank_cap - f_at_box, max(0.0, f_needed_next - f_at_box))
@@ -1664,7 +1664,10 @@ class PilotLiveCard(ctk.CTkFrame):
         tyre_change_s = float(sdata.get("tyre_change_time", 4.0))
         car_lift_s = float(sdata.get("car_lift_s") or sdata.get("car_lift_time") or 2.0)
         pitlane_loss_s = float(sdata.get("pitlane_loss") or sdata.get("pitlane_loss_s") or 22.5)
-        weight_sens = float(fdata.get("weight_sens") or fdata.get("calc_results", {}).get("weight_sens") or 0.015)
+        weight_sens = fdata.get("weight_sens")
+        if weight_sens is None:
+            weight_sens = fdata.get("calc_results", {}).get("weight_sens")
+        weight_sens = float(0.015 if weight_sens is None else weight_sens)
         cons_base = float(fdata.get("cons_lap", 5.65))
         safety_l = float(fdata.get("safety_fuel_l", 2.5))
         try:
@@ -1760,16 +1763,32 @@ class PilotLiveCard(ctk.CTkFrame):
         if hasattr(self, "_var_mounted_comp") and self._var_mounted_comp.get():
             curr_comp = "hard" if "Duro" in self._var_mounted_comp.get() else "soft"
 
-        # Parámetros OLS de neumáticos
-        h_base = float(tdata.get("hard_base_lap", base_lap_s))
-        h_warm = float(tdata.get("hard_warmup", 0.800))
-        h_a = float(tdata.get("hard_a", 0.2223))
-        h_n = float(tdata.get("hard_n", -0.1208))
+        # Parámetros OLS de neumáticos. Los modelos alternativos cargados en Gráficos de
+        # Estrategia guardan los valores como texto ("01:57.500", "0,80"): normalizar.
+        def _num(key, default):
+            val = tdata.get(key, default)
+            if val is None or val == "":
+                return float(default)
+            if isinstance(val, (int, float)):
+                return float(val)
+            txt = str(val).strip().replace(",", ".")
+            try:
+                if ":" in txt:
+                    mins, secs = txt.split(":", 1)
+                    return float(mins) * 60.0 + float(secs)
+                return float(txt)
+            except ValueError:
+                return float(default)
 
-        s_base = float(tdata.get("soft_base_lap", base_lap_s - 0.450))
-        s_warm = float(tdata.get("soft_warmup", 0.400))
-        s_a = float(tdata.get("soft_a", 0.5318))
-        s_n = float(tdata.get("soft_n", -0.3968))
+        h_base = _num("hard_base_lap", base_lap_s)
+        h_warm = _num("hard_warmup", 0.800)
+        h_a = _num("hard_a", 0.2223)
+        h_n = _num("hard_n", -0.1208)
+
+        s_base = _num("soft_base_lap", base_lap_s - 0.450)
+        s_warm = _num("soft_warmup", 0.400)
+        s_a = _num("soft_a", 0.5318)
+        s_n = _num("soft_n", -0.3968)
 
         # Evento Safety Car
         sc_active = self._var_tac_sc.get()
@@ -1784,6 +1803,43 @@ class PilotLiveCard(ctk.CTkFrame):
         sec_num = 1 if "1" in sc_sec_str else (2 if "2" in sc_sec_str else 3)
         frac_dep = 1.0 if sec_num == 1 else (2.0 / 3.0 if sec_num == 2 else 1.0 / 3.0)
         sc_end = sc_dep_lap + sc_dur
+
+        # Ritmo y consumo bajo SC con los mismos datos que Gráficos de Estrategia:
+        # ritmo = longitud / velocidad SC del perfil; consumo = el del primer tramo de SC
+        # configurado en el comparador (1.80 L/v si no hay ninguno).
+        try:
+            track_len_km = float(sdata.get("track_length_km") or 0.0)
+            sc_speed_kmh = float(sdata.get("sc_speed_kmh") or 0.0)
+        except (TypeError, ValueError):
+            track_len_km = sc_speed_kmh = 0.0
+        if track_len_km > 0 and sc_speed_kmh > 0:
+            sc_pace_full = (track_len_km / sc_speed_kmh) * 3600.0
+        else:
+            sc_pace_full = float(sdata.get("sc_pace_s") or base_lap_s * 1.40)
+        sc_fuel_lap = 1.80
+        try:
+            top = self.winfo_toplevel()
+            charts_mod = getattr(top, "_modules", {}).get("charts")
+            if charts_mod and hasattr(charts_mod, "_get_active_sc_segments"):
+                segs = [sg for sg in charts_mod._get_active_sc_segments() if sg.get("enabled", True)]
+                if segs:
+                    sc_fuel_lap = float(segs[0].get("fuel_l", 1.80))
+        except Exception:
+            pass
+
+        # Con SC las vueltas son más lentas: el líder completará menos vueltas antes de que
+        # expire el reloj. Recalcular la meta como el comparador (vueltas SC + verdes + 1).
+        if sc_active:
+            leader_pace = float(race_state.get("leader_pace_s") or base_lap_s) or base_lap_s
+            track_s = float(race_state.get("track_seconds", 0.0))
+            n_sc_laps = sc_dur + 1
+            time_sc = frac_dep * sc_pace_full + (1.0 - frac_dep) * leader_pace + sc_dur * sc_pace_full
+            green_left = track_s - time_sc
+            if green_left > 0:
+                tot_laps = race_state["leader_lap"] + n_sc_laps + math.floor(green_left / leader_pace) + 1
+            else:
+                tot_laps = race_state["leader_lap"] + max(1, math.ceil(track_s / sc_pace_full))
+            tot_laps = max(tot_laps, curr_lap + 1)
 
         saving_curve = self._get_fuel_saving_curve()
         usable_tank = max(1.0, tank_cap - safety_l)
@@ -1806,7 +1862,7 @@ class PilotLiveCard(ctk.CTkFrame):
                 if sc_active and sc_dep_lap <= v <= sc_end:
                     frac = frac_dep if v == sc_dep_lap else 1.0
                     st_sc_count += frac
-                    f_needed += (1.0 - frac) * cons_base + frac * 1.80
+                    f_needed += (1.0 - frac) * cons_base + frac * sc_fuel_lap
                 else:
                     f_needed += cons_base
 
@@ -1828,7 +1884,6 @@ class PilotLiveCard(ctk.CTkFrame):
             t_acc = 0.0
             f_sim = init_fuel
             tyre_x = init_tyre_age
-            sc_pace_full = base_lap_s * 1.40
             f_sim_curve = []
 
             base_p = h_base if comp == "hard" else s_base
@@ -1851,7 +1906,7 @@ class PilotLiveCard(ctk.CTkFrame):
                 if sc_active and sc_dep_lap <= v <= sc_end:
                     frac = frac_dep if v == sc_dep_lap else 1.0
                     t_lap = (1.0 - frac) * t_green + frac * sc_pace_full
-                    cons_lap = (1.0 - frac) * cons_base + frac * 1.80
+                    cons_lap = (1.0 - frac) * cons_base + frac * sc_fuel_lap
                     if (1.0 - frac) >= 0.5:
                         tyre_x += 1
                 else:
@@ -1943,7 +1998,7 @@ class PilotLiveCard(ctk.CTkFrame):
                 for v in range(p_cand + 1, tot_laps + 1):
                     if sc_active and sc_dep_lap <= v <= sc_end:
                         frac = frac_dep if v == sc_dep_lap else 1.0
-                        f_needed_st2 += (1.0 - frac) * cons_base + frac * 1.80
+                        f_needed_st2 += (1.0 - frac) * cons_base + frac * sc_fuel_lap
                     else:
                         f_needed_st2 += cons_base
                 f_needed_st2 += safety_l
@@ -2021,7 +2076,7 @@ class PilotLiveCard(ctk.CTkFrame):
                     for v in range(p1_cand + 1, p2_cand + 1):
                         if sc_active and sc_dep_lap <= v <= sc_end:
                             frac = frac_dep if v == sc_dep_lap else 1.0
-                            f_needed_st2 += (1.0 - frac) * cons_base + frac * 1.80
+                            f_needed_st2 += (1.0 - frac) * cons_base + frac * sc_fuel_lap
                         else:
                             f_needed_st2 += cons_base
                     f_needed_st2 += safety_l
@@ -2033,7 +2088,7 @@ class PilotLiveCard(ctk.CTkFrame):
                     for v in range(p2_cand + 1, tot_laps + 1):
                         if sc_active and sc_dep_lap <= v <= sc_end:
                             frac = frac_dep if v == sc_dep_lap else 1.0
-                            f_needed_st3 += (1.0 - frac) * cons_base + frac * 1.80
+                            f_needed_st3 += (1.0 - frac) * cons_base + frac * sc_fuel_lap
                         else:
                             f_needed_st3 += cons_base
                     f_needed_st3 += safety_l

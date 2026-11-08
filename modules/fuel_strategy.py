@@ -328,8 +328,14 @@ class FuelStrategyModule(ctk.CTkFrame):
 
         self._inputs_modes = WidthModes(box, _inputs_mode, _apply_inputs)
 
-    def _on_params_changed(self):
-        self.auto_populate_saving_tables()
+    def _on_params_changed(self, regenerate: bool = False):
+        """Recalcula al cambiar consumo/reserva/peso.
+
+        Los escalones de las tablas (delta L/v) se recalculan con el nuevo consumo, pero se
+        conservan los 'Delta Tiempo (s)' calibrados por el usuario y las filas manuales.
+        Solo 'Regenerar Escalones' (regenerate=True) vuelve a los tiempos por defecto.
+        """
+        self.auto_populate_saving_tables(keep_calibration=not regenerate)
         self.calculate_strategy()
 
     # ─── 3. Desglose del Algoritmo Iterativo ──────────────────
@@ -567,7 +573,7 @@ class FuelStrategyModule(ctk.CTkFrame):
             border_color=self.colors["accent"],
             text_color=self.colors["accent"],
             font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
-            command=self._on_params_changed,
+            command=lambda: self._on_params_changed(regenerate=True),
         )
         btn_regen.pack(side="right")
 
@@ -670,8 +676,10 @@ class FuelStrategyModule(ctk.CTkFrame):
     #  AUTOCÁLCULO ANALÍTICO DE TABLAS (+1 Y +2 VUELTAS EXTRA)
     # ═══════════════════════════════════════════════════════════
 
-    def auto_populate_saving_tables(self):
+    def auto_populate_saving_tables(self, keep_calibration: bool = False):
         cons_base = self._get_base_consumption()
+        if cons_base <= 0:
+            return  # consumo no válido: no se pueden calcular escalones
         tank_cap = float(self.session_data.get("fuel_capacity_l", 70.0))
         safety_l = self._get_safety_fuel_litres()
         usable_fuel = max(1.0, tank_cap - safety_l)
@@ -704,11 +712,30 @@ class FuelStrategyModule(ctk.CTkFrame):
                 "delta_s": def_draft_time,
             })
 
+        if keep_calibration:
+            new_saving_rows = self._merge_calibrated_rows(getattr(self, "fuel_saving_rows", []), new_saving_rows)
+            new_draft_rows = self._merge_calibrated_rows(getattr(self, "draft_rows", []), new_draft_rows)
+
         self.fuel_saving_rows = new_saving_rows
         self.draft_rows = new_draft_rows
 
         self._render_table_rows(is_draft=False)
         self._render_table_rows(is_draft=True)
+
+    @staticmethod
+    def _merge_calibrated_rows(old_rows: list, new_rows: list) -> list:
+        """Escalones nuevos (delta_l) con el delta_s ya calibrado de la fila de igual etiqueta;
+        las filas manuales (etiquetas que no son escalones automáticos) se mantienen."""
+        old_by_label = {r.get("label"): r for r in old_rows or []}
+        auto_labels = {r["label"] for r in new_rows}
+        merged = []
+        for r in new_rows:
+            prev = old_by_label.get(r["label"])
+            if prev is not None and "delta_s" in prev:
+                r = dict(r, delta_s=prev["delta_s"])
+            merged.append(r)
+        merged.extend(dict(r) for r in old_rows or [] if r.get("label") not in auto_labels)
+        return merged
 
     def _render_table_rows(self, is_draft: bool):
         if not hasattr(self, "_saving_container") or not hasattr(self, "_draft_container"):
@@ -723,6 +750,8 @@ class FuelStrategyModule(ctk.CTkFrame):
                 w.destroy()
 
         base_cons = self._get_base_consumption()
+        if base_cons <= 0:
+            return  # consumo no válido (el banner ya avisa)
         tank_cap = float(self.session_data.get("fuel_capacity_l", 70.0))
         safety_l = self._get_safety_fuel_litres()
         usable_fuel = max(1.0, tank_cap - safety_l)
@@ -931,6 +960,28 @@ class FuelStrategyModule(ctk.CTkFrame):
         cons_lap      = self._get_base_consumption()
         safety_fuel_l = self._get_safety_fuel_litres()
         weight_sens   = self._get_weight_sensitivity()
+
+        # ── Validación de entradas (evita divisiones por cero y estrategias absurdas) ──
+        errors = []
+        if cons_lap <= 0:
+            errors.append("el consumo base debe ser mayor que 0 L/v")
+        if safety_fuel_l < 0 or safety_fuel_l >= tank_capacity:
+            errors.append(f"la reserva debe estar entre 0 y {tank_capacity:.0f} L (depósito)")
+        if weight_sens < 0:
+            errors.append("el efecto peso no puede ser negativo")
+        if refuel_rate <= 0:
+            errors.append("el ratio de repostaje del campeonato debe ser mayor que 0 L/s")
+        if lap_time_s <= 0:
+            errors.append("el tiempo de vuelta del circuito debe ser mayor que 0")
+        if tank_capacity <= 0:
+            errors.append("la capacidad del depósito debe ser mayor que 0 L")
+        if errors:
+            self._banner_label.configure(
+                text="⚠️  No se puede calcular: " + "; ".join(errors) + ".",
+                text_color=self.colors["danger"],
+            )
+            return
+        self._banner_label.configure(text_color=self.colors["text_secondary"])
 
         # ── Gasolina Gratis (T_ruedas * Refuel_rate) ─────────
         free_fuel_l = tyre_change_s * refuel_rate
@@ -1263,7 +1314,7 @@ class FuelStrategyModule(ctk.CTkFrame):
             fuel_at_finish = safety_l
 
         # Tiempos
-        refuel_t = fuel_to_add_short / refuel_rate
+        refuel_t = fuel_to_add_short / refuel_rate if refuel_rate > 0 else 0.0
         box_t = car_lift_s + max(refuel_t, tyre_change)
         limiting = "REPOSTAJE" if refuel_t > tyre_change else "NEUMÁTICOS"
         tot_loss = pitlane_loss + box_t
@@ -1601,12 +1652,10 @@ class FuelStrategyModule(ctk.CTkFrame):
                     return
                 except Exception:
                     pass
-            circ_cons = str(self.session_data.get("fuel_per_lap_l", "2.15"))
-            self._var_fuel_lap.set(circ_cons)
-            self._var_safety_fuel.set("2.5")
-            self._var_weight_sens.set("0.015")
-            self._var_num_stops.set(1)
-            self.auto_populate_saving_tables()
+            # Circuito sin <circuito>_fuel.json guardado: no hay "modelo base" en disco.
+            # Se mantienen los valores introducidos (antes se forzaban 2.15 L/v, 2.5 L y
+            # 0.015 s/L, valores del Dallara IR-18, sea cual sea el coche).
+            self.auto_populate_saving_tables(keep_calibration=True)
             self.calculate_strategy()
             return
 
