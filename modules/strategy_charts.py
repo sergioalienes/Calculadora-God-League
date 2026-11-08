@@ -1614,7 +1614,6 @@ class StrategyChartsModule(ctk.CTkFrame):
             else:
                 draft_segments = []
 
-        draft_saving_l = self._get_draft_saving_l()
         draft_laps_set = set()
         if draft_enabled and draft_segments:
             for d_item in draft_segments:
@@ -1628,8 +1627,11 @@ class StrategyChartsModule(ctk.CTkFrame):
         c2_code = self._label_to_code(stint_comps[1] if len(stint_comps) > 1 else "soft")
         c3_code = self._label_to_code(stint_comps[2] if len(stint_comps) > 2 else "soft")
         # 5. Bucle de convergencia de pasadas para restar la pérdida exacta en boxes del líder
+        # Curvas de penalización por ahorro: dependen solo del estado del módulo (no de la
+        # pasada), así que se obtienen una vez por simulación en lugar de una vez por pasada.
         usable_tank = max(1.0, tank_cap - safety_l)
         saving_curve = self._get_fuel_saving_curve()
+        draft_curve = self._get_draft_saving_curve()
 
         def _simulate_pass(target_laps: int):
 
@@ -1653,15 +1655,9 @@ class StrategyChartsModule(ctk.CTkFrame):
                 pit_laps = [p1_eff, p2_eff]
 
             # 6. Cálculo previo de necesidad de combustible y penalización por ahorro (Lift & Coast y Rebufo)
-            usable_tank = max(1.0, tank_cap - safety_l)
             stint_saving_penalties = []
-            saving_curve = self._get_fuel_saving_curve()
-            draft_curve = self._get_draft_saving_curve()
 
             for _, start_v, end_v, _ in stints_def:
-                st_len = end_v - start_v + 1
-                st_sc_count = sum(sc_fractions.get(v, 0.0) for v in range(start_v, end_v + 1))
-                st_draft_count = len([v for v in range(start_v, end_v + 1) if (v in draft_laps_set and v not in sc_laps_set)])
                 n_racing_laps = max(0.0, sum(1.0 - sc_fractions.get(v, 0.0) for v in range(start_v, end_v + 1)))
 
                 # Combustible requerido a ritmo base sin ahorro adicional
