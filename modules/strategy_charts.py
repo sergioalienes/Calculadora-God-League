@@ -2652,14 +2652,18 @@ class StrategyChartsModule(ctk.CTkFrame):
             y_min = 100.0
             y_max = 130.0
 
-        # Cuadrícula vertical de vueltas individual (cada vuelta discontinua, cada 5 más gruesa)
-        for v in range(1, tot_laps + 1):
-            if v % 5 == 0:
-                self._ax_pace.axvline(x=v, color="#383838", linestyle="--", linewidth=1.1, alpha=0.6, zorder=1)
-                self._ax_bars.axvline(x=v, color="#383838", linestyle="--", linewidth=1.1, alpha=0.5, zorder=1)
-            else:
-                self._ax_pace.axvline(x=v, color="#222222", linestyle=":", linewidth=0.6, alpha=0.45, zorder=1)
-                self._ax_bars.axvline(x=v, color="#222222", linestyle=":", linewidth=0.6, alpha=0.35, zorder=1)
+        # Cuadrícula vertical de vueltas individual (cada vuelta discontinua, cada 5 más gruesa).
+        # Se dibuja con una única LineCollection por estilo y eje (vlines en coordenadas
+        # x=datos / y=ejes, igual que axvline) en lugar de ~2 Line2D por vuelta: mismo
+        # aspecto y ~10x menos artistas que crear y renderizar en cada movimiento de slider.
+        major_v = [v for v in range(1, tot_laps + 1) if v % 5 == 0]
+        minor_v = [v for v in range(1, tot_laps + 1) if v % 5 != 0]
+        for ax, a_major, a_minor in ((self._ax_pace, 0.6, 0.45), (self._ax_bars, 0.5, 0.35)):
+            x_tr = ax.get_xaxis_transform()
+            if major_v:
+                ax.vlines(major_v, 0, 1, transform=x_tr, colors="#383838", linestyles="--", linewidth=1.1, alpha=a_major, zorder=1)
+            if minor_v:
+                ax.vlines(minor_v, 0, 1, transform=x_tr, colors="#222222", linestyles=":", linewidth=0.6, alpha=a_minor, zorder=1)
 
         # Sombreado de área por compuesto y curvas continuas
         plotted_h = False
