@@ -1,0 +1,15 @@
+1) Arranque con last_module='live' en Bélgica:
+   antes: leader_lap=7, registros piloto1=2 | después (disco): leader_lap= 0  registros piloto1= 0
+2) Avisos/errores impresos durante la navegación: ninguno
+   fuel exporta num_stops/pit1/pit2 = 2 12 24 viable= ['2 Paradas']
+   comparador óptima = {'num_stops': 2, 'p1': 12, 'p2': 23, 'stint1_comp': 'hard', 'stint2_comp': 'hard', 'stint3_comp': 'soft'}
+   live piloto1 active_strategy = {'num_stops': 1, 'p1': 15, 'p2': 0, 'target_cons': [5.65, 5.65]}
+3) carpetas: ['God League', 'God League 2024', 'God Legue división Olimpo', 'IMSA_ GT3_']
+   _last_state guardado: {'last_module': 'charts', 'championship': 'IMSA: GT3?', 'circuit': 'Daytona: Road', 'ui_zoom': '100%'}
+   load_session_by_names(estado guardado) -> False (False = no se restaurará al reabrir)
+   mandatory_compound_change guardado = True (no hay control en la UI para desactivarlo)
+4) Guardar campeonato con '105,5': CRASH ValueError: could not convert string to float: '105,5'  (el validador lo aceptó)
+   Guardar circuito con pitlane '30,5': CRASH ValueError: could not convert string to float: '30,5'
+5) Tras borrar 'Road America' quedan: ['Road America_live.json']
+
+Todo en carpeta temporal: C:\Users\sergi\AppData\Local\Temp\agente2_profiles_7zgq0xjy\profiles

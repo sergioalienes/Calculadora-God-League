@@ -1,0 +1,185 @@
+==========================================================================================
+Bélgica (perfil real)
+  [nota] _build_stints_section existe en el módulo pero nunca se invoca desde _build_scroll -> hasattr(_stints_card)= False
+  exportado SIN sección de stints: num_stops=2 pit1_lap=22 pit2_lap=34 (vueltas=31)
+  vueltas truncadas app=31  ref(código, con car_lift)=31  ref(doc, sin car_lift)=31
+  paradas mínimas app=2  ref=2  (mandatory=True)
+  autonomía base=12 v  autonomía -20%=15 v  (app max_laps_per_stint_20=15)
+  viable_modes=['2 Paradas']  num_stops seleccionado=2  p1=15 p2=30
+  gasolina gratis=50.0 L   combustible final=175.6 L
+    - 2 Paradas: (k+1)*autonomía_-20% = 45 v  vs 31 v -> OK
+      _lbl_2s1_laps => • 1 ➔ 15 (15 v)
+      _lbl_2s1_target => • Target: 4.640 L/v
+      _lbl_2s2_laps => • 16 ➔ 30 (15 v)
+      _lbl_2s2_target => • Target: 4.640 L/v
+      _lbl_2s3_laps => • 31 ➔ 31 (1 v)
+      _lbl_2s3_target => • Target: 5.650 L/v
+      _lbl_2s3_meta => • Meta con: 0.4 L
+      _lbl_2pit1_info => 🛑 PIT 1 (V15): Cargar 69.6L [+19.6L penalizan (+2.0s ⚠️)] ➔ Sale con 70.0L
+      _lbl_2pit2_info => 🛑 PIT 2 (V30): Cargar 5.7L [Gratis ✅ (5.7/50.0L)] ➔ Sale con 6.1L
+==========================================================================================
+Road America (perfil real)
+  [nota] _build_stints_section existe en el módulo pero nunca se invoca desde _build_scroll -> hasattr(_stints_card)= False
+  exportado SIN sección de stints: num_stops=2 pit1_lap=22 pit2_lap=34 (vueltas=34)
+  vueltas truncadas app=34  ref(código, con car_lift)=34  ref(doc, sin car_lift)=34
+  paradas mínimas app=2  ref=2  (mandatory=True)
+  autonomía base=12 v  autonomía -20%=16 v  (app max_laps_per_stint_20=16)
+  viable_modes=['2 Paradas']  num_stops seleccionado=2  p1=16 p2=32
+  gasolina gratis=50.0 L   combustible final=184.0 L
+    - 2 Paradas: (k+1)*autonomía_-20% = 48 v  vs 34 v -> OK
+      _lbl_2s1_laps => • 1 ➔ 16 (16 v)
+      _lbl_2s1_target => • Target: 4.350 L/v
+      _lbl_2s2_laps => • 17 ➔ 32 (16 v)
+      _lbl_2s2_target => • Target: 4.350 L/v
+      _lbl_2s3_laps => • 33 ➔ 34 (2 v)
+      _lbl_2s3_target => • Target: 5.400 L/v
+      _lbl_2s3_meta => • Meta con: 0.4 L
+      _lbl_2pit1_info => 🛑 PIT 1 (V16): Cargar 69.6L [+19.6L penalizan (+2.0s ⚠️)] ➔ Sale con 70.0L
+      _lbl_2pit2_info => 🛑 PIT 2 (V32): Cargar 10.8L [Gratis ✅ (10.8/50.0L)] ➔ Sale con 11.2L
+==========================================================================================
+Nordschleife (perfil real)
+  [nota] _build_stints_section existe en el módulo pero nunca se invoca desde _build_scroll -> hasattr(_stints_card)= False
+  exportado SIN sección de stints: num_stops=2 pit1_lap=22 pit2_lap=34 (vueltas=9)
+  vueltas truncadas app=9  ref(código, con car_lift)=9  ref(doc, sin car_lift)=9
+  paradas mínimas app=2  ref=2  (mandatory=True)
+  autonomía base=3 v  autonomía -20%=4 v  (app max_laps_per_stint_20=4)
+  viable_modes=['2 Paradas']  num_stops seleccionado=2  p1=4 p2=8
+  gasolina gratis=50.0 L   combustible final=180.4 L
+    - 2 Paradas: (k+1)*autonomía_-20% = 12 v  vs 9 v -> OK
+      _lbl_2s1_laps => • 1 ➔ 4 (4 v)
+      _lbl_2s1_target => • Target: 17.400 L/v
+      _lbl_2s2_laps => • 5 ➔ 8 (4 v)
+      _lbl_2s2_target => • Target: 17.400 L/v
+      _lbl_2s3_laps => • 9 ➔ 9 (1 v)
+      _lbl_2s3_target => • Target: 20.000 L/v
+      _lbl_2s3_meta => • Meta con: 0.4 L
+      _lbl_2pit1_info => 🛑 PIT 1 (V4): Cargar 69.6L [+19.6L penalizan (+2.0s ⚠️)] ➔ Sale con 70.0L
+      _lbl_2pit2_info => 🛑 PIT 2 (V8): Cargar 20.0L [Gratis ✅ (20.0/50.0L)] ➔ Sale con 20.4L
+==========================================================================================
+GT3 105L 2.8L/s 45min
+  [nota] _build_stints_section existe en el módulo pero nunca se invoca desde _build_scroll -> hasattr(_stints_card)= False
+  exportado SIN sección de stints: num_stops=1 pit1_lap=22 pit2_lap=34 (vueltas=26)
+  vueltas truncadas app=26  ref(código, con car_lift)=26  ref(doc, sin car_lift)=26
+  paradas mínimas app=1  ref=1  (mandatory=True)
+  autonomía base=32 v  autonomía -20%=40 v  (app max_laps_per_stint_20=40)
+  viable_modes=['1 Parada']  num_stops seleccionado=1  p1=22 p2=34
+  gasolina gratis=50.4 L   combustible final=84.2 L
+    - 1 Parada: (k+1)*autonomía_-20% = 80 v  vs 26 v -> OK
+      _lbl_s1_laps => • Vueltas: 1 ➔ 22 (22 v)
+      _lbl_s1_target => • Target Consumo: 4.727 L/v
+      _lbl_s1_box => • Litros al llegar a box: 34.60 L
+      _lbl_s2_laps => • Vueltas: 23 ➔ 26 (4 v)
+      _lbl_s2_target => • Target Consumo: 8.400 L/v
+      _lbl_s2_meta => • Litros al cruzar meta: 21.80 L (reserva)
+      _lbl_pit1_load => Box: 34.6 L ➔ Cargar: 0.0 L
+      _lbl_pit1_tank => Sale con: 34.6 L (Límite: 105L)
+      _lbl_pit1_loss => Box: 20.0s (NEUMÁTICOS) | Total: 50.0s
+      _lbl_pit1_free => ⛽ 0.0L Gratis (0s extra)
+==========================================================================================
+GTP 110L 120min
+  [nota] _build_stints_section existe en el módulo pero nunca se invoca desde _build_scroll -> hasattr(_stints_card)= False
+  exportado SIN sección de stints: num_stops=2 pit1_lap=22 pit2_lap=34 (vueltas=75)
+  vueltas truncadas app=75  ref(código, con car_lift)=75  ref(doc, sin car_lift)=75
+  paradas mínimas app=2  ref=2  (mandatory=True)
+  autonomía base=30 v  autonomía -20%=37 v  (app max_laps_per_stint_20=37)
+  viable_modes=['2 Paradas']  num_stops seleccionado=2  p1=22 p2=38
+  gasolina gratis=70.0 L   combustible final=271.0 L
+    - 2 Paradas: (k+1)*autonomía_-20% = 111 v  vs 75 v -> OK
+      _lbl_2s1_laps => • 1 ➔ 22 (22 v)
+      _lbl_2s1_target => • Target: 4.955 L/v
+      _lbl_2s2_laps => • 23 ➔ 38 (16 v)
+      _lbl_2s2_target => • Target: 3.600 L/v
+      _lbl_2s3_laps => • 39 ➔ 75 (37 v)
+      _lbl_2s3_target => • Target: 2.946 L/v
+      _lbl_2s3_meta => • Meta con: 1.0 L
+      _lbl_2pit1_info => 🛑 PIT 1 (V22): Cargar 27.8L [Gratis ✅ (27.8/70.0L)] ➔ Sale con 58.6L
+      _lbl_2pit2_info => 🛑 PIT 2 (V38): Cargar 109.0L [+39.0L penalizan (+11.1s ⚠️)] ➔ Sale con 110.0L
+==========================================================================================
+Sprint 20 min IR-18
+  [nota] _build_stints_section existe en el módulo pero nunca se invoca desde _build_scroll -> hasattr(_stints_card)= False
+  exportado SIN sección de stints: num_stops=1 pit1_lap=22 pit2_lap=34 (vueltas=14)
+  vueltas truncadas app=14  ref(código, con car_lift)=14  ref(doc, sin car_lift)=14
+  paradas mínimas app=1  ref=1  (mandatory=True)
+  autonomía base=31 v  autonomía -20%=39 v  (app max_laps_per_stint_20=39)
+  viable_modes=['1 Parada']  num_stops seleccionado=1  p1=13 p2=34
+  gasolina gratis=48.0 L   combustible final=32.6 L
+    - 1 Parada: (k+1)*autonomía_-20% = 78 v  vs 14 v -> OK
+      _lbl_s1_laps => • Vueltas: 1 ➔ 13 (13 v)
+      _lbl_s1_target => • Target Consumo: 5.192 L/v
+      _lbl_s1_box => • Litros al llegar a box: 42.05 L
+      _lbl_s2_laps => • Vueltas: 14 ➔ 14 (1 v)
+      _lbl_s2_target => • Target Consumo: 39.550 L/v
+      _lbl_s2_meta => • Litros al cruzar meta: 39.90 L (reserva)
+      _lbl_pit1_load => Box: 42.0 L ➔ Cargar: 0.0 L
+      _lbl_pit1_tank => Sale con: 42.0 L (Límite: 70L)
+      _lbl_pit1_loss => Box: 6.0s (NEUMÁTICOS) | Total: 28.5s
+      _lbl_pit1_free => ⛽ 0.0L Gratis (0s extra)
+==========================================================================================
+Tanque enorme 500L sin compuesto obligatorio
+  [nota] _build_stints_section existe en el módulo pero nunca se invoca desde _build_scroll -> hasattr(_stints_card)= False
+  exportado SIN sección de stints: num_stops=1 pit1_lap=22 pit2_lap=34 (vueltas=40)
+  vueltas truncadas app=40  ref(código, con car_lift)=41  ref(doc, sin car_lift)=41
+  paradas mínimas app=1  ref=0  (mandatory=False)
+  autonomía base=249 v  autonomía -20%=311 v  (app max_laps_per_stint_20=311)
+  viable_modes=['1 Parada']  num_stops seleccionado=1  p1=22 p2=34
+  gasolina gratis=50.0 L   combustible final=81.0 L
+    - 1 Parada: (k+1)*autonomía_-20% = 622 v  vs 40 v -> OK
+      _lbl_s1_laps => • Vueltas: 1 ➔ 22 (22 v)
+      _lbl_s1_target => • Target Consumo: 22.682 L/v
+      _lbl_s1_box => • Litros al llegar a box: 456.00 L
+      _lbl_s2_laps => • Vueltas: 23 ➔ 40 (18 v)
+      _lbl_s2_target => • Target Consumo: 25.278 L/v
+      _lbl_s2_meta => • Litros al cruzar meta: 420.00 L (reserva)
+      _lbl_pit1_load => Box: 456.0 L ➔ Cargar: 0.0 L
+      _lbl_pit1_tank => Sale con: 456.0 L (Límite: 500L)
+      _lbl_pit1_loss => Box: 12.0s (NEUMÁTICOS) | Total: 37.0s
+      _lbl_pit1_free => ⛽ 0.0L Gratis (0s extra)
+==========================================================================================
+Consumo altísimo 30 L/v
+  [nota] _build_stints_section existe en el módulo pero nunca se invoca desde _build_scroll -> hasattr(_stints_card)= False
+  exportado SIN sección de stints: num_stops=16 pit1_lap=22 pit2_lap=34 (vueltas=34)
+  vueltas truncadas app=34  ref(código, con car_lift)=34  ref(doc, sin car_lift)=35
+  paradas mínimas app=17  ref=17  (mandatory=True)
+  autonomía base=2 v  autonomía -20%=2 v  (app max_laps_per_stint_20=2)
+  viable_modes=['16 Paradas']  num_stops seleccionado=16  p1=30 p2=32
+  gasolina gratis=48.0 L   combustible final=1022.5 L
+    - 16 Paradas: (k+1)*autonomía_-20% = 34 v  vs 34 v -> OK
+      _lbl_2s1_laps => 
+      _lbl_2s1_target => 
+      _lbl_2s2_laps => 
+      _lbl_2s2_target => 
+      _lbl_2s3_laps => 
+      _lbl_2s3_target => 
+      _lbl_2s3_meta => 
+      _lbl_2pit1_info => 
+      _lbl_2pit2_info => 
+   >>> ATENCIÓN: num_stops = 16 pero la UI solo tiene widgets de 2 paradas (rendered_mode= 16 )
+==========================================================================================
+2-3 paradas (GT3 120 min, 5 L/v)
+  [nota] _build_stints_section existe en el módulo pero nunca se invoca desde _build_scroll -> hasattr(_stints_card)= False
+  exportado SIN sección de stints: num_stops=2 pit1_lap=22 pit2_lap=34 (vueltas=67)
+  vueltas truncadas app=67  ref(código, con car_lift)=67  ref(doc, sin car_lift)=67
+  paradas mínimas app=3  ref=3  (mandatory=True)
+  autonomía base=20 v  autonomía -20%=26 v  (app max_laps_per_stint_20=26)
+  viable_modes=['2 Paradas', '3 Paradas']  num_stops seleccionado=2  p1=22 p2=41
+  gasolina gratis=50.4 L   combustible final=336.0 L
+    - 2 Paradas: (k+1)*autonomía_-20% = 78 v  vs 67 v -> OK
+    - 3 Paradas: (k+1)*autonomía_-20% = 104 v  vs 67 v -> OK
+      _lbl_2s1_laps => • 1 ➔ 22 (22 v)
+      _lbl_2s1_target => • Target: 4.727 L/v
+      _lbl_2s2_laps => • 23 ➔ 41 (19 v)
+      _lbl_2s2_target => • Target: 5.000 L/v
+      _lbl_2s3_laps => • 42 ➔ 67 (26 v)
+      _lbl_2s3_target => • Target: 4.000 L/v
+      _lbl_2s3_meta => • Meta con: 1.0 L
+      _lbl_2pit1_info => 🛑 PIT 1 (V22): Cargar 95.0L [+44.6L penalizan (+15.9s ⚠️)] ➔ Sale con 96.0L
+      _lbl_2pit2_info => 🛑 PIT 2 (V41): Cargar 104.0L [+53.6L penalizan (+19.1s ⚠️)] ➔ Sale con 105.0L
+==========================================================================================
+Entradas degeneradas
+  cons=0.0 safety=2.5: CRASH ZeroDivisionError: float division by zero
+     _on_params_changed (Return en el campo): CRASH ZeroDivisionError: float division by zero
+  cons=-1.0 safety=2.5: OK  trunc=40 viable=['39 Paradas'] max20=-85
+     _on_params_changed (Return en el campo): OK
+  cons=2.15 safety=80.0: OK  trunc=2 viable=['1 Parada', '2 Paradas'] max20=0
+     _on_params_changed (Return en el campo): OK
+  refuel_rate=0: CRASH ZeroDivisionError: float division by zero

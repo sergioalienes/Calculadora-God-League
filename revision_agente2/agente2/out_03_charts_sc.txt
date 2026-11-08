@@ -1,0 +1,50 @@
+
+
+######## PRUEBA 3: COMPARADOR / SAFETY CAR ########
+  Bélgica 1 parada V15 (plan por defecto del live): laps=31 t=3762.85s pit=38.0s final_fuel=0.00L min_fuel=0.00L pits=[(15, 38.0, 69.6, '', '')]
+     S1 V1-15 (15v) hard cons_verde=4.64 Ahorro (-1.01L/v)
+     S2 V16-31 (16v) soft cons_verde=4.52 Ahorro (-1.13L/v)
+     vueltas con depósito a 0 L: [31] -> el simulador NO marca la estrategia como inviable
+  Bélgica 2 paradas V12/V24 + SC V8 S2 x3: laps=27 t=3695.32s pit=72.2s final_fuel=0.40L min_fuel=0.40L pits=[(12, 36.2, 51.9, '', ''), (24, 36.0, 16.9, '', '')]
+     S1 V1-12 (12v) hard cons_verde=5.65 SC (3.67v)
+     S2 V13-24 (12v) hard cons_verde=5.65 PUSH (Normal)
+     S3 V25-27 (3v) soft cons_verde=5.65 PUSH (Normal)
+  Bélgica 2 paradas V9/V22 + SC V8 S2 x3: laps=27 t=3659.48s pit=36.0s final_fuel=0.40L min_fuel=0.40L pits=[(9, 0.0, 44.4, 'SCgratis', ''), (22, 36.0, 24.4, '', '')]
+     S1 V1-9 (9v) hard cons_verde=5.65 SC (1.67v)
+     S2 V10-22 (13v) hard cons_verde=5.65 SC (2v)
+     S3 V23-27 (5v) soft cons_verde=5.65 PUSH (Normal)
+  Bélgica 2 paradas V10/V22 + SC V8 S2 x3: laps=27 t=3659.48s pit=36.0s final_fuel=0.40L min_fuel=0.40L pits=[(10, 0.0, 44.4, 'SCgratis', ''), (22, 36.0, 24.4, '', '')]
+     S1 V1-10 (10v) hard cons_verde=5.65 SC (2.67v)
+     S2 V11-22 (12v) hard cons_verde=5.65 SC (1v)
+     S3 V23-27 (5v) soft cons_verde=5.65 PUSH (Normal)
+  Bélgica 2 paradas V11/V22 + SC V8 S2 x3: laps=27 t=3694.55s pit=72.0s final_fuel=0.40L min_fuel=0.40L pits=[(11, 36.0, 40.6, '', ''), (22, 36.0, 28.2, '', '')]
+     S1 V1-11 (11v) hard cons_verde=5.65 SC (3.67v)
+     S2 V12-22 (11v) hard cons_verde=5.65 PUSH (Normal)
+     S3 V23-27 (5v) soft cons_verde=5.65 PUSH (Normal)
+  SC pace comparador (track_len/sc_speed) = 240.0 s ; sc_pace_s del perfil = 240.0 ; live_control usa base_lap*1.40 = 163.79999999999998 s
+  Óptima con SC: {'num_stops': 2, 'p1': 10, 'p2': 23, 'stint1_comp': 'hard', 'stint2_comp': 'hard', 'stint3_comp': 'soft'}
+  óptima con SC: laps=27 t=3659.20s pit=36.0s final_fuel=0.40L min_fuel=0.40L pits=[(10, 0.0, 46.2, 'SCgratis', ''), (23, 36.0, 22.6, '', '')]
+     S1 V1-10 (10v) hard cons_verde=5.65 SC (2.67v)
+     S2 V11-23 (13v) hard cons_verde=5.65 SC (1v)
+     S3 V24-27 (4v) soft cons_verde=5.65 PUSH (Normal)
+  Oportunidad 1 parada con SC V8: (16, 'hard', 'soft', 3676.9219124432643, 'SAFETY CAR')
+  candidato 1 parada: laps=27 t=3676.92s pit=37.2s final_fuel=0.40L min_fuel=0.40L pits=[(16, 37.2, 62.1, '', '')]
+     S1 V1-16 (16v) hard cons_verde=5.11 SC (3.67v)   Ahorro (-0.54L/v)
+     S2 V17-27 (11v) soft cons_verde=5.65 PUSH (Normal)
+  Óptima con SC largo V12 x10: {'num_stops': 2, 'p1': 13, 'p2': 14, 'stint1_comp': 'hard', 'stint2_comp': 'hard', 'stint3_comp': 'soft'}
+  óptima SC largo: laps=20 t=3415.13s pit=0.0s final_fuel=23.50L min_fuel=2.97L pits=[(13, 0.0, 3.1, 'SCgratis', ''), (14, 0.0, 30.1, 'SCgratis', '')]
+     S1 V1-13 (13v) hard cons_verde=5.65 SC (1.67v)
+     S2 V14-14 (1v) hard cons_verde=1.80 SC (1v)
+     S3 V15-20 (6v) soft cons_verde=1.80 SC (6v)
+  Óptima con rebufo V20-21: {'num_stops': 2, 'p1': 12, 'p2': 23, 'stint1_comp': 'hard', 'stint2_comp': 'hard', 'stint3_comp': 'soft'}
+  óptima rebufo: laps=31 t=3721.42s pit=73.0s final_fuel=0.40L min_fuel=0.40L pits=[(12, 37.0, 60.4, '', ''), (23, 36.0, 45.2, '', '')]
+     S1 V1-12 (12v) hard cons_verde=5.65 PUSH (Normal)
+     S2 V13-23 (11v) hard cons_verde=5.65 Rebufo (2v)
+     S3 V24-31 (8v) soft cons_verde=5.65 PUSH (Normal)
+  Estrategias guardadas Bélgica (simulate_strategy_for_config):
+    E1          : stops=2 p1=13 p2=26 comps=hard/hard/soft fuel_model=None -> laps=31 t=3725.22s min_fuel=0.40
+    P1 +1       : stops=2 p1=13 p2=25 comps=hard/hard/soft fuel_model=None -> laps=31 t=3720.53s min_fuel=0.40
+    Estrategia 1: stops=2 p1=12 p2=23 comps=hard/hard/soft fuel_model=Modelo 1 -> laps=31 t=3721.42s min_fuel=0.40
+  Vueltas totales por módulo (Bélgica): combustible= 31 | comparador 1 parada V15 = 31 | comparador 2 paradas V12/V24 = 31
+  viable_modes=['3 Paradas','4 Paradas'] -> _var_num_stops del comparador = 3 Paradas -> recalculate_and_plot simula num_stops = 2
+  solve_optimal_strategy con solo 3/4 paradas viables -> None

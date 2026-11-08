@@ -287,6 +287,12 @@ class CalculadoraApp(ctk.CTk):
         logo = getattr(self, "_sidebar_logo_lbl", None)
         if logo is None or (event is not None and event.widget is not self.sidebar):
             return
+        # Durante el cierre de la ventana los widgets ya pueden estar destruidos
+        try:
+            if not (logo.winfo_exists() and self.sidebar.winfo_exists()):
+                return
+        except tk.TclError:
+            return
         height = self.sidebar.winfo_height()
         if height <= 1:
             return

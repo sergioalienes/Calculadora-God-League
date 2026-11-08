@@ -1,0 +1,19 @@
+a) _live.json preparado con leader_lap=5, piloto 'Piloto PRUEBA' con 2 registros
+   tras on_session_data_updated -> en memoria: nombre= Piloto 1 (NIX)  registros= 0  leader_lap= 0
+   en disco: nombre= Piloto 1 (NIX)  registros= 0  leader_lap= 0
+b) Primer registro V3 con 53.05 L -> consumo registrado = 16.95 L/v (esperado 5.65)
+c) V11 (7.85 L) plan 2 paradas V12/V24, total=43: 'Box 1: Fin V12 (en 1v)' | 'Cargar: 66.0 L'
+c) V12 (2.2 L) plan 2 paradas V12/V24, total=43: 'Box 2: Fin V24 (en 0v)' | 'Cargar: 67.8 L'
+   esperado en V12: 'Box 1: Fin V12', cargar (24-12)*5.65+0.4-2.2 = 66.0 L
+d) líder modo '0 Paradas': pit_loss=0.0s total_proyectado=31 (combustible=31)
+d) líder modo '1 Parada (Tanque Lleno)': pit_loss=38.0s total_proyectado=31 (combustible=31)
+d) líder modo '2 Paradas': pit_loss=74.0s total_proyectado=31 (combustible=31)
+d) líder modo 'Solo Ruedas': pit_loss=36.0s total_proyectado=31 (combustible=31)
+   V20 (líder YA hizo sus 2 paradas, reloj 00:19:48): pit_loss restado otra vez=74.0s -> total=30
+   parse_clock_to_seconds('120') = 7200.0  ; ('200') = 200.0
+e) Táctico SC V7 S2 x3 -> {'rem_stops': 2, 'p1': 9, 'p2': 22, 'fuel_to_load': 40.58333333333334, 'fuel_to_load2': 50.84999999999998, 'is_sc_free': True, 'total_rem_time': 3149.384014305452}
+   descripción: Sugerencia (2 Paradas restantes)  🟡 ¡PARADA GRATIS BAJO SC!: | • Box 1: Fin V9 (+40.6L · S2 Prime (Duro)) | • Box 2: Fin V22 (+50.8L · S3 Alternative (Blando)) | Tiempo restante est: 00:52:29
+   comparador mismo SC (V7 S2 x3): total_laps=27 (el táctico usa tot_laps del líder = 31, sin descontar el SC)
+   override de neumáticos del comparador: {'hard_base_lap': '01:57.500', 'soft_base_lap': '01:56.5'}
+   táctico con modelo alternativo: CRASH -> ValueError: could not convert string to float: '01:57.500'
+f) active_strategy por defecto de un piloto nuevo: {'num_stops': 1, 'p1': 15, 'p2': 0, 'stint1_comp': 'hard', 'stint2_comp': 'soft', 'stint3_comp': 'soft', 'target_cons': [5.65, 5.65], 'refuel_litres': [30.0]}

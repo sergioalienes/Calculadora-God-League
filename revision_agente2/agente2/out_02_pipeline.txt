@@ -1,0 +1,138 @@
+Circuitos listados para 'God League': ['Bélgica', 'Bélgica_fuel', 'Bélgica_fuel_models', 'Bélgica_live', 'Bélgica_strategies', 'Bélgica_tyre_models', 'Bélgica_tyres', 'Nurburgring Nordschleife', 'Nurburgring Nordschleife_fuel', 'Nurburgring Nordschleife_fuel_models', 'Nurburgring Nordschleife_live', 'Nurburgring Nordschleife_strategies', 'Nurburgring Nordschleife_tyre_models', 'Nurburgring Nordschleife_tyres', 'Road America', 'Road America_fuel', 'Road America_fuel_models', 'Road America_live', 'Road America_strategies', 'Road America_tyre_models', 'Road America_tyres']
+
+[session_data Bélgica] ok=True claves=['car', 'car_lift_s', 'car_lift_time', 'championship_name', 'circuit', 'fuel_capacity_l', 'lap_time_seconds', 'lap_time_str', 'mandatory_compound_change', 'pitlane_loss', 'pitlane_loss_s', 'race_duration_min', 'race_duration_minutes', 'race_duration_s', 'refuel_rate_ls', 'sc_pace_s', 'sc_pace_str', 'sc_speed_kmh', 'track_length_km', 'tyre_change_s', 'tyre_change_time', 'tyre_compounds']
+  ¿Contiene fuel_per_lap_l / weight_penalty_s_per_10l / safety_margin_l? [False, False, False]
+====================================================================================================
+PERFIL REAL: God League / Bélgica
+  Combustible -> vueltas=31 viable=['2 Paradas'] num_stops=2 pit1=12 pit2=24 cons=5.65 reserva=0.4 sens=0.022
+  Neumáticos  -> total_laps=31 num_stops=2 p1=12 p2=24 comps=['hard', 'hard', 'soft']
+    get_tyre_pace(hard) - base para x=0..5: [1.8, 0.0, 0.379, 0.612, 0.777, 0.905]
+    get_tyre_pace(soft) - base para x=0..5: [0.8, 0.0, 1.542, 2.145, 2.573, 2.905]
+  Tiempo total Neumáticos app=01h 02m 01.438s (3721.438s)  ref=3721.438s  boxes app=73.6 ref=73.6
+    max delta peso = 0.0000 s (debe ser <= 0)   min = -1.407 s
+  Comparador mismo plan -> total_laps=31 total=3721.438s boxes=73.6s final_fuel=0.40 L  min_fuel=0.40 L
+    Diferencia comparador - neumáticos = -0.000 s ; vueltas 31 vs 31
+    stints comparador: S1 V1-12 5.65L/v PUSH (Normal) | S2 V13-24 5.65L/v PUSH (Normal) | S3 V25-31 5.65L/v PUSH (Normal)
+    pit_info: [(12, 37.6, 66.0), (24, 36.0, 39.5)]
+  ÓPTIMA comparador: {'num_stops': 2, 'p1': 12, 'p2': 23, 'stint1_comp': 'hard', 'stint2_comp': 'hard', 'stint3_comp': 'soft'}  -> laps=31 t=3721.42s final_fuel=0.40 min_fuel=0.40
+
+[session_data Road America] ok=True claves=['car', 'car_lift_s', 'car_lift_time', 'championship_name', 'circuit', 'fuel_capacity_l', 'lap_time_seconds', 'lap_time_str', 'mandatory_compound_change', 'pitlane_loss', 'pitlane_loss_s', 'race_duration_min', 'race_duration_minutes', 'race_duration_s', 'refuel_rate_ls', 'sc_pace_s', 'sc_pace_str', 'sc_speed_kmh', 'track_length_km', 'tyre_change_s', 'tyre_change_time', 'tyre_compounds']
+  ¿Contiene fuel_per_lap_l / weight_penalty_s_per_10l / safety_margin_l? [False, False, False]
+====================================================================================================
+PERFIL REAL: God League / Road America
+  Combustible -> vueltas=34 viable=['2 Paradas'] num_stops=2 pit1=12 pit2=24 cons=5.4 reserva=0.4 sens=0.02
+  Neumáticos  -> total_laps=34 num_stops=2 p1=12 p2=24 comps=['soft', 'hard', 'hard']
+    get_tyre_pace(hard) - base para x=0..5: [1.3, 0.0, 0.41, 0.498, 0.56, 0.609]
+    get_tyre_pace(soft) - base para x=0..5: [0.5, 0.0, 0.669, 1.465, 2.03, 2.468]
+  Tiempo total Neumáticos app=01h 00m 37.598s (3637.598s)  ref=3637.598s  boxes app=71.4 ref=71.4
+    max delta peso = 0.0000 s (debe ser <= 0)   min = -1.284 s
+  Comparador mismo plan -> total_laps=34 total=3637.598s boxes=71.4s final_fuel=0.40 L  min_fuel=0.40 L
+    Diferencia comparador - neumáticos = +0.000 s ; vueltas 34 vs 34
+    stints comparador: S1 V1-12 5.40L/v PUSH (Normal) | S2 V13-24 5.40L/v PUSH (Normal) | S3 V25-34 5.40L/v PUSH (Normal)
+    pit_info: [(12, 36.0, 60.0), (24, 35.4, 54.0)]
+  ÓPTIMA comparador: {'num_stops': 2, 'p1': 13, 'p2': 21, 'stint1_comp': 'hard', 'stint2_comp': 'soft', 'stint3_comp': 'hard'}  -> laps=34 t=3630.09s final_fuel=0.40 min_fuel=0.40
+
+[session_data Nurburgring Nordschleife] ok=True claves=['car', 'car_lift_s', 'car_lift_time', 'championship_name', 'circuit', 'fuel_capacity_l', 'lap_time_seconds', 'lap_time_str', 'mandatory_compound_change', 'pitlane_loss', 'pitlane_loss_s', 'race_duration_min', 'race_duration_minutes', 'race_duration_s', 'refuel_rate_ls', 'sc_pace_s', 'sc_pace_str', 'sc_speed_kmh', 'track_length_km', 'tyre_change_s', 'tyre_change_time', 'tyre_compounds']
+  ¿Contiene fuel_per_lap_l / weight_penalty_s_per_10l / safety_margin_l? [False, False, False]
+====================================================================================================
+PERFIL REAL: God League / Nurburgring Nordschleife
+  Combustible -> vueltas=9 viable=['2 Paradas'] num_stops=2 pit1=22 pit2=34 cons=20.0 reserva=0.4 sens=0.072
+  Neumáticos  -> total_laps=9 num_stops=2 p1=4 p2=8 comps=['soft', 'hard', 'hard']
+    get_tyre_pace(hard) - base para x=0..5: [-1.4, 0.0, 0.6, 1.9, 2.822, 3.538]
+    get_tyre_pace(soft) - base para x=0..5: [-5.0, 0.0, 3.5, 5.0, 6.064, 6.89]
+  Tiempo total Neumáticos app=01h 04m 07.349s (3847.349s)  ref=3847.349s  boxes app=62.0 ref=62.0
+    max delta peso = 0.0000 s (debe ser <= 0)   min = -4.320 s
+  Comparador mismo plan -> total_laps=9 total=3867.555s boxes=62.0s final_fuel=0.40 L  min_fuel=0.40 L
+    Diferencia comparador - neumáticos = +20.206 s ; vueltas 9 vs 9
+    stints comparador: S1 V1-4 17.40L/v Ahorro (-2.60L/v) | S2 V5-8 17.40L/v Ahorro (-2.60L/v) | S3 V9-9 20.00L/v PUSH (Normal)
+    pit_info: [(4, 32.0, 69.6), (8, 30.0, 20.0)]
+  ÓPTIMA comparador: {'num_stops': 2, 'p1': 3, 'p2': 6, 'stint1_comp': 'hard', 'stint2_comp': 'hard', 'stint3_comp': 'soft'}  -> laps=9 t=3843.03s final_fuel=0.40 min_fuel=0.40
+====================================================================================================
+GT3 105 L / 2.8 L/s / 45 min, 3.2 L/v
+  Combustible -> vueltas=26 viable=['1 Parada'] num_stops=1 pit1=22 pit2=34 cons=3.2 reserva=1.0 sens=0.03
+  Neumáticos  -> total_laps=26 num_stops=1 p1=22 p2=34 comps=['soft', 'hard']
+    get_tyre_pace(hard) - base para x=0..5: [0.8, 0.0, 0.033, 0.123, 0.187, 0.237]
+    get_tyre_pace(soft) - base para x=0..5: [0.4, 0.0, 0.0, 0.187, 0.34, 0.459]
+  Tiempo total Neumáticos app=46m 19.182s (2779.182s)  ref=2779.182s  boxes app=50.0 ref=50.0
+    max delta peso = 0.0000 s (debe ser <= 0)   min = -2.400 s
+  Comparador mismo plan -> total_laps=26 total=2779.182s boxes=50.0s final_fuel=21.80 L  min_fuel=21.80 L
+    Diferencia comparador - neumáticos = +0.000 s ; vueltas 26 vs 26
+    stints comparador: S1 V1-22 3.20L/v PUSH (Normal) | S2 V23-26 3.20L/v PUSH (Normal)
+    pit_info: [(22, 50.0, 0.0)]
+  ÓPTIMA comparador: {'num_stops': 1, 'p1': 11, 'p2': 0, 'stint1_comp': 'hard', 'stint2_comp': 'soft', 'stint3_comp': 'soft'}  -> laps=26 t=2777.54s final_fuel=21.80 min_fuel=21.80
+====================================================================================================
+GTP 110 L / 120 min / 3:30, 9.5 L/v
+  Combustible -> vueltas=34 viable=['2 Paradas', '3 Paradas'] num_stops=2 pit1=22 pit2=34 cons=9.5 reserva=1.0 sens=0.03
+  Neumáticos  -> total_laps=34 num_stops=2 p1=14 p2=28 comps=['soft', 'hard', 'hard']
+    get_tyre_pace(hard) - base para x=0..5: [0.8, 0.0, 0.033, 0.123, 0.187, 0.237]
+    get_tyre_pace(soft) - base para x=0..5: [0.4, 0.0, 0.0, 0.187, 0.34, 0.459]
+  Tiempo total Neumáticos app=02h 00m 00.498s (7200.498s)  ref=7200.498s  boxes app=125.4 ref=125.4
+    max delta peso = 0.0000 s (debe ser <= 0)   min = -3.270 s
+  Comparador mismo plan -> total_laps=34 total=7243.509s boxes=125.1s final_fuel=1.00 L  min_fuel=1.00 L
+    Diferencia comparador - neumáticos = +43.011 s ; vueltas 34 vs 34
+    stints comparador: S1 V1-14 7.79L/v Ahorro (-1.71L/v) | S2 V15-28 7.79L/v Ahorro (-1.71L/v) | S3 V29-34 9.50L/v PUSH (Normal)
+    pit_info: [(14, 68.1, 109.0), (28, 57.0, 57.0)]
+  ÓPTIMA comparador: {'num_stops': 2, 'p1': 12, 'p2': 23, 'stint1_comp': 'soft', 'stint2_comp': 'soft', 'stint3_comp': 'hard'}  -> laps=34 t=7215.98s final_fuel=1.00 min_fuel=1.00
+====================================================================================================
+Sprint 20 min IR-18 (compuesto obligatorio)
+  Combustible -> vueltas=14 viable=['1 Parada'] num_stops=1 pit1=22 pit2=34 cons=2.15 reserva=2.5 sens=0.015
+  Neumáticos  -> total_laps=14 num_stops=1 p1=13 p2=34 comps=['soft', 'hard']
+    get_tyre_pace(hard) - base para x=0..5: [0.8, 0.0, 0.033, 0.123, 0.187, 0.237]
+    get_tyre_pace(soft) - base para x=0..5: [0.4, 0.0, 0.0, 0.187, 0.34, 0.459]
+  Tiempo total Neumáticos app=20m 10.208s (1210.208s)  ref=1210.208s  boxes app=28.5 ref=28.5
+    max delta peso = 0.0000 s (debe ser <= 0)   min = -0.419 s
+  Comparador mismo plan -> total_laps=14 total=1210.208s boxes=28.5s final_fuel=39.90 L  min_fuel=39.90 L
+    Diferencia comparador - neumáticos = -0.000 s ; vueltas 14 vs 14
+    stints comparador: S1 V1-13 2.15L/v PUSH (Normal) | S2 V14-14 2.15L/v PUSH (Normal)
+    pit_info: [(13, 28.5, 0.0)]
+  ÓPTIMA comparador: {'num_stops': 1, 'p1': 8, 'p2': 0, 'stint1_comp': 'soft', 'stint2_comp': 'hard', 'stint3_comp': 'soft'}  -> laps=14 t=1208.93s final_fuel=39.90 min_fuel=39.90
+====================================================================================================
+Sprint 20 min SIN cambio obligatorio de compuesto
+  Combustible -> vueltas=14 viable=['1 Parada'] num_stops=1 pit1=22 pit2=34 cons=2.15 reserva=2.5 sens=0.015
+  Neumáticos  -> total_laps=14 num_stops=1 p1=13 p2=34 comps=['soft', 'hard']
+    get_tyre_pace(hard) - base para x=0..5: [0.8, 0.0, 0.033, 0.123, 0.187, 0.237]
+    get_tyre_pace(soft) - base para x=0..5: [0.4, 0.0, 0.0, 0.187, 0.34, 0.459]
+  Tiempo total Neumáticos app=20m 10.208s (1210.208s)  ref=1210.208s  boxes app=28.5 ref=28.5
+    max delta peso = 0.0000 s (debe ser <= 0)   min = -0.419 s
+  Comparador mismo plan -> total_laps=14 total=1210.208s boxes=28.5s final_fuel=39.90 L  min_fuel=39.90 L
+    Diferencia comparador - neumáticos = -0.000 s ; vueltas 14 vs 14
+    stints comparador: S1 V1-13 2.15L/v PUSH (Normal) | S2 V14-14 2.15L/v PUSH (Normal)
+    pit_info: [(13, 28.5, 0.0)]
+  ÓPTIMA comparador: {'num_stops': 1, 'p1': 7, 'p2': 0, 'stint1_comp': 'soft', 'stint2_comp': 'soft', 'stint3_comp': 'soft'}  -> laps=14 t=1206.15s final_fuel=39.90 min_fuel=39.90
+====================================================================================================
+GT3 120 min 5 L/v (viable 2 y 3 paradas)
+  Combustible -> vueltas=67 viable=['2 Paradas', '3 Paradas'] num_stops=2 pit1=22 pit2=34 cons=5.0 reserva=1.0 sens=0.03
+  Neumáticos  -> total_laps=67 num_stops=2 p1=22 p2=41 comps=['soft', 'hard', 'hard']
+    get_tyre_pace(hard) - base para x=0..5: [0.8, 0.0, 0.033, 0.123, 0.187, 0.237]
+    get_tyre_pace(soft) - base para x=0..5: [0.4, 0.0, 0.0, 0.187, 0.34, 0.459]
+  Tiempo total Neumáticos app=01h 59m 05.986s (7145.986s)  ref=7145.986s  boxes app=135.4 ref=135.4
+    max delta peso = 0.0000 s (debe ser <= 0)   min = -3.120 s
+  Comparador mismo plan -> total_laps=67 total=7241.140s boxes=135.1s final_fuel=1.00 L  min_fuel=1.00 L
+    Diferencia comparador - neumáticos = +95.154 s ; vueltas 67 vs 67
+    stints comparador: S1 V1-22 4.73L/v Ahorro (-0.27L/v) | S2 V23-41 5.00L/v PUSH (Normal) | S3 V42-67 4.00L/v Ahorro (-1.00L/v)
+    pit_info: [(22, 65.9, 95.0), (41, 69.1, 104.0)]
+  ÓPTIMA comparador: {'num_stops': 2, 'p1': 22, 'p2': 44, 'stint1_comp': 'soft', 'stint2_comp': 'soft', 'stint3_comp': 'hard'}  -> laps=67 t=7219.63s final_fuel=1.00 min_fuel=1.00
+====================================================================================================
+Consumo altísimo 12 L/v (solo >=3 paradas viables)
+  Combustible -> vueltas=38 viable=['5 Paradas', '6 Paradas', '7 Paradas'] num_stops=5 pit1=22 pit2=34 cons=12.0 reserva=1.0 sens=0.015
+  Neumáticos  -> total_laps=38 num_stops=5 p1=8 p2=16 comps=['soft', 'hard', 'hard']
+    get_tyre_pace(hard) - base para x=0..5: [0.8, 0.0, 0.033, 0.123, 0.187, 0.237]
+    get_tyre_pace(soft) - base para x=0..5: [0.4, 0.0, 0.0, 0.187, 0.34, 0.459]
+  Tiempo total Neumáticos app=57m 13.057s (3433.057s)  ref=3465.890s  boxes app=32.8 ref=65.7
+    max delta peso = 0.0000 s (debe ser <= 0)   min = -1.035 s
+  Comparador mismo plan -> total_laps=40 total=3680.782s boxes=65.7s final_fuel=0.00 L  min_fuel=0.00 L
+    Diferencia comparador - neumáticos = +247.725 s ; vueltas 40 vs 38
+    stints comparador: S1 V1-8 9.60L/v Ahorro (-2.40L/v) | S2 V9-16 9.60L/v Ahorro (-2.40L/v) | S3 V17-40 9.60L/v Ahorro (-2.40L/v)
+    pit_info: [(8, 32.8, 70.0), (16, 32.8, 70.0)]
+  ÓPTIMA comparador: NINGUNA (solve_optimal_strategy devolvió None)
+====================================================================================================
+Sensibilidad de peso 0.0 en combustible
+  fuel_data['weight_sens'] = 0.0
+  sensibilidad efectiva en tyre_strategy.recalculate_and_plot (misma expresión) = 0.015
+  sensibilidad efectiva en strategy_charts = 0.0
+====================================================================================================
+OLS casos límite
+  puntos=[{'lap': 5, 'delta': 0.3}, {'lap': 5, 'delta': 0.5}] -> a=0.1243 n=0.2000 R2=0.0000 warnings=['Polyfit may be poorly conditioned']
+  puntos=[{'lap': 2, 'delta': 0.5}, {'lap': 3, 'delta': 0.2}, {'lap': 6, 'delta': 0.1}] -> a=-0.3404 n=0.6733 R2=0.8254 warnings=[]
+  Bélgica duro: guardado a=0.5739 n=-0.0186 R2=0.9934  | recalculado a=0.5739 n=-0.0186 R2=0.9934
+  Mensajes messagebox capturados: [('warning', ('Aviso', 'No se encontró una estrategia óptima viable con los datos actuales.'))]

@@ -6,3 +6,12 @@ __pycache__/
 *.zip
 build/
 dist/
+
+# Worktrees y datos locales de Claude Code
+.claude/
+
+# Artefactos de pruebas de los agentes (capturas, copias de perfiles)
+scratch/agente1/figs_*/
+scratch/agente1/shots_*/
+scratch/agente1/profiles_backup/
+scratch/agente1/profiles_hashes_antes.txt
