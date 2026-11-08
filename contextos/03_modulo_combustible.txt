@@ -1,0 +1,104 @@
+================================================================================
+CONTEXTO ESPECÍFICO — CONVERSACIÓN PARA EL MÓDULO DE COMBUSTIBLE
+Calculadora God League — Suite Universal de Estrategia (Team NIX Esports)
+Archivo: modules/fuel_strategy.py (Módulo 2)
+================================================================================
+
+1. OBJETIVO DE ESTA CONVERSACIÓN
+--------------------------------------------------------------------------------
+Esta conversación está dedicada exclusivamente al desarrollo, mantenimiento,
+auditoría matemática y optimización de rendimiento del MÓDULO 2: ESTRATEGIA DE
+COMBUSTIBLE. Su misión es modelar la autonomía del vehículo, calcular con precisión
+milimétrica las vueltas de carrera según la regla White Flag, gestionar el consumo
+por stint (PUSH vs LIFT & COAST), aplicar el doble filtro de viabilidad y suministrar
+los límites operativos al resto de módulos de la aplicación.
+
+2. ARQUITECTURA DEL ARCHIVO Y RESPONSABILIDADES
+--------------------------------------------------------------------------------
+- Ruta del código: `E:\Calculadora God League\modules\fuel_strategy.py`
+- Clase principal: `FuelStrategyModule(ctk.CTkFrame)`
+- Persistencia: `profiles/<campeonato>/<circuito>_fuel.json`
+- Dependencias: `customtkinter`, `math`, `json`, `re`, `pathlib.Path`, `tkinter.messagebox`.
+
+3. MODELADO FÍSICO Y ALGORITMOS MATEMÁTICOS
+--------------------------------------------------------------------------------
+3.1. CÁLCULO DE VUELTAS TOTALES (REGLA WHITE FLAG DE IRACING)
+- En carreras por tiempo (ej. 60 min) con salida lanzada (rolling start) o parada:
+    effective_time = (race_duration_min * 60) - (start_delay_s if standing_start else 0)
+    truncated_laps = math.floor(effective_time / base_lap_time) + 1
+- Sumar +1 vuelta es imperativo: cuando el reloj de carrera llega a 00:00, el líder
+  recibe la bandera blanca (White Flag) y debe completar una vuelta final completa
+  hasta cruzar la bandera a cuadros (Checkered Flag). Un cálculo sin este +1 dejará
+  al coche sin gasolina en la última curva.
+
+3.2. REGLAMENTO DEPORTIVO: MÍNIMO 1 PARADA OBLIGATORIA
+- En competiciones con normativa de compuestos de neumáticos obligatorios (o paradas
+  técnicas reglamentarias), ninguna estrategia de "0 Paradas" está permitida.
+- El algoritmo fuerza:
+    k_save = max(1, k_save_calc)
+    k_base = max(1, k_base_calc)
+  Incluso si un coche de resistencia tuviera autonomía para rodar los 60 minutos
+  completos sin repostar, el sistema exige al menos 1 parada para cumplir con la norma.
+
+3.3. DOBLE FILTRO DE VIABILIDAD MATEMÁTICA (-20% LÍMITE DE AHORRO)
+Para cada opción de número de paradas (k = 1, 2, 3...):
+  1. Límite de Ahorro Máximo (-20%):
+     El consumo objetivo por vuelta en cualquier stint no puede ser inferior
+     al 80% del consumo base de push:
+       c_target = combustible_disponible / vueltas_del_stint >= 0.80 * c_base
+     Si requiere ahorrar más del 20%, la estrategia se descarta automáticamente
+     como "Físicamente Imposible / Inviable".
+  2. Límite de Sobre-Paradas (Over-stopping, +10% margen):
+     Si una estrategia con k paradas ya es completamente viable sin exigir ahorro
+     extremo, se descartan paradas adicionales innecesarias (k+2, k+3) que fragmentarían
+     la carrera en stints artificialmente cortos perdiendo tiempo en el pitlane.
+- Exportación: El diccionario `viable_modes` contendrá únicamente las paradas
+  reales (ej. `['2 Paradas']` en circuitos largos como Bélgica/Spa con Dallara IR-18).
+
+3.4. CÁLCULO DE LITROS A CARGAR Y CAPACIDAD MÁXIMA
+- En cada parada p:
+    remanente = fuel_stint_anterior - (vueltas_completadas * consumo_l_v)
+    litros_necesarios = (vueltas_siguiente_stint * consumo_l_v) + reserva_seguridad - remanente
+    litros_a_cargar = min(litros_necesarios, capacidad_tanque - remanente)
+- El combustible en el tanque nunca puede exceder la capacidad máxima de homologación
+  del vehículo (70L en Dallara IR-18, 105L en GT3, 110L en GTP).
+
+3.5. MECÁNICA DE BOXES Y "GASOLINA GRATIS"
+- El tiempo total de servicio en el cajón de boxes:
+    t_servicio = max(litros_a_cargar / refuel_rate, tyre_change_time)
+- En repostaje simultáneo, si el cambio de neumáticos tarda 8 segundos y repostar
+  tarda 5 segundos, el tiempo limitante son los neumáticos (8s), por lo que repostar
+  esos 5 segundos no añade ninguna penalización temporal adicional ("gasolina gratis").
+
+4. ARQUITECTURA TÉCNICA DE SLIDERS Y DESACOPLAMIENTO DE UI
+--------------------------------------------------------------------------------
+- Los sliders de vueltas de parada (`CTkSlider`) NUNCA se destruyen ni se reconstruyen
+  mientras el usuario los arrastra en tiempo real.
+- Destruir sliders durante eventos del ratón causa pérdida de foco, parpadeos y
+  crasheos internos de CustomTkinter.
+- Separación clara:
+  * `_build_sliders(num_stops)`: Solo crea la estructura de widgets si cambia el
+    número de paradas.
+  * `_update_slider_bounds(stint_data)`: Actualiza `from_` y `to_` de los sliders existentes.
+  * `_on_slider_moved(val)`: Solo recalcula litros y textos en etiquetas livianas.
+- Protección de división por cero: Si `min_bound == max_bound` (rango de 1 sola vuelta),
+  se oculta temporalmente el slider interactivo y se coloca un `_slider_dummy` inerte
+  con valor fijo para evitar que CTkSlider divida entre cero (`(to - from) == 0`).
+
+5. HISTORIAL DE ERRORES CORREGIDOS (NO REPETIR)
+--------------------------------------------------------------------------------
+1. Crasheo de CTkSlider por `from_ == to_`: Corregido con el componente dummy inerte.
+2. Destrucción de sliders al arrastrar: Corregido mediante desacoplamiento funcional.
+3. Permisión de estrategias con ahorro > 20%: Corregido con el filtro de viabilidad.
+4. Estrategia de 0 paradas sugerida con reglamento de compuestos: Corregido con
+   el mínimo de 1 parada forzada por reglamento.
+
+6. CONEXIÓN CON OTROS MÓDULOS
+--------------------------------------------------------------------------------
+- Recibe de Módulo 1 (`championship_data.py`):
+  `fuel_capacity_l`, `refuel_rate_ls`, `tyre_change_s`, `base_lap_time_s`, `fuel_per_lap_l`.
+- Envía a Módulo 3 (`tyre_strategy.py`):
+  `viable_modes`, `stops_count`, `stint_laps`, `pit_laps`, `refuel_litres`, `pit_times`.
+- Envía a Módulo 4 (`strategy_charts.py`):
+  Datos completos de consumo y tiempos de pitlane para comparación multi-estrategia.
+================================================================================

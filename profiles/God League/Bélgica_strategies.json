@@ -1,0 +1,120 @@
+{
+  "E1": {
+    "num_stops": 2,
+    "p1": 13,
+    "p2": 26,
+    "stint1_comp": "hard",
+    "stint2_comp": "hard",
+    "stint3_comp": "soft",
+    "forced_s1": "Auto",
+    "forced_s2": "Duro",
+    "forced_s3": "Blando",
+    "forced_start_comp": "Auto",
+    "sc_enabled": false,
+    "sc_segments": [
+      {
+        "enabled": true,
+        "lap": 8,
+        "sector": "Sector 2",
+        "duration": 3,
+        "fuel_l": "1.80"
+      }
+    ],
+    "draft_enabled": false,
+    "draft_segments": [
+      {
+        "enabled": true,
+        "start": 5,
+        "end": 15,
+        "delta_l": "-0.25",
+        "delta_s": "-0.15"
+      }
+    ],
+    "sc_lap": 8,
+    "sc_sector": "Sector 2",
+    "sc_duration": 3,
+    "sc_fuel_l": "1.80",
+    "draft_start": 5,
+    "draft_end": 15,
+    "draft_delta_l": "-0.25",
+    "draft_delta_s": "-0.15"
+  },
+  "P1 +1": {
+    "num_stops": 2,
+    "p1": 13,
+    "p2": 25,
+    "stint1_comp": "hard",
+    "stint2_comp": "hard",
+    "stint3_comp": "soft",
+    "forced_s1": "Auto",
+    "forced_s2": "Auto",
+    "forced_s3": "Auto",
+    "forced_start_comp": "Auto",
+    "sc_enabled": false,
+    "sc_segments": [
+      {
+        "enabled": true,
+        "lap": 8,
+        "sector": "Sector 2",
+        "duration": 3,
+        "fuel_l": "1.80"
+      }
+    ],
+    "draft_enabled": true,
+    "draft_segments": [
+      {
+        "enabled": true,
+        "start": 1,
+        "end": 13
+      }
+    ],
+    "sc_lap": 8,
+    "sc_sector": "Sector 2",
+    "sc_duration": 3,
+    "sc_fuel_l": "1.80",
+    "draft_start": 1,
+    "draft_end": 13,
+    "draft_delta_l": "-0.30",
+    "draft_delta_s": "0.00"
+  },
+  "Estrategia 1": {
+    "num_stops": 2,
+    "p1": 12,
+    "p2": 23,
+    "fuel_model": "Modelo 1",
+    "tyre_model": "Modelo 1",
+    "stint1_comp": "hard",
+    "stint2_comp": "hard",
+    "stint3_comp": "soft",
+    "forced_s1": "Duro",
+    "forced_s2": "Auto",
+    "forced_s3": "Blando",
+    "forced_start_comp": "Duro",
+    "sc_enabled": false,
+    "sc_segments": [
+      {
+        "enabled": true,
+        "lap": 8,
+        "sector": "Sector 2",
+        "duration": 3,
+        "fuel_l": "1.80"
+      }
+    ],
+    "draft_enabled": false,
+    "draft_segments": [
+      {
+        "enabled": true,
+        "start": 5,
+        "end": 15
+      }
+    ],
+    "sc_lap": 8,
+    "sc_sector": "Sector 2",
+    "sc_duration": 3,
+    "sc_fuel_l": "1.80",
+    "draft_start": 5,
+    "draft_end": 15,
+    "draft_delta_l": "-0.30",
+    "draft_delta_s": "0.00"
+  }
+}

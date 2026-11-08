@@ -1,0 +1,68 @@
+================================================================================
+ÍNDICE Y GUÍA DE USO — ARCHIVOS DE CONTEXTO MODULARES (TEAM NIX ESPORTS)
+Calculadora God League — Suite Universal de Estrategia para iRacing
+Directorio: E:\Calculadora God League\contextos\
+================================================================================
+
+Este directorio contiene los archivos de contexto altamente especializados diseñados
+para iniciar CONVERSACIONES INDEPENDIENTES y optimizadas en entornos de Inteligencia
+Artificial sin sobrecargar el contexto y con máxima precisión técnica en cada área.
+
+--------------------------------------------------------------------------------
+MAPA DE ARCHIVOS Y DESTINO DE CADA CONVERSACIÓN
+--------------------------------------------------------------------------------
+1. `01_modulo_neumaticos.txt`:
+   - Destino: Conversación dedicada al Módulo 3 (`modules/tyre_strategy.py`).
+   - Contenido: Ritmo base a tanque lleno, modelo a tramos (x=0, x=1, x>=2), regresión
+     logarítmica OLS, carrileo horizontal en boxes, enlace con combustible.
+
+2. `02_modulo_ruedas.txt`:
+   - Destino: Conversación dedicada a la física de ruedas y telemetría OMI.
+   - Contenido: Desgaste en 4 esquinas (LF, RF, LR, RR), temperaturas O/M/I,
+     presiones en frío vs caliente, asignación de juegos (Tyre Allocation) y double stint.
+
+3. `03_modulo_combustible.txt`:
+   - Destino: Conversación dedicada al Módulo 2 (`modules/fuel_strategy.py`).
+   - Contenido: Regla White Flag (+1 vuelta), paradas obligatorias por reglamento,
+     doble filtro de viabilidad (-20%), sliders desacoplados y cálculo de boxes.
+
+4. `04_modulo_estrategias.txt`:
+   - Destino: Conversación dedicada al Módulo 4 (`modules/strategy_charts.py`).
+   - Contenido: Comparativa concurrente multi-estrategia, simulación integral de carrera,
+     curvas de delta acumulado, ventanas de Undercut / Overcut y podium estratégico.
+
+5. `05_modulo_live_timing.txt`:
+   - Destino: Conversación dedicada al Módulo 5 (`modules/live_control.py`).
+   - Contenido: Integración iRacing SDK (`pyirsdk`), multithreading con memoria compartida,
+     semáforo de consumo en vivo (PUSH/SAVE), recalibración por Safety Car y Overlay flotante.
+
+6. `06_optimizacion_app.txt`:
+   - Destino: Conversación dedicada a rendimiento y optimización.
+   - Contenido: Desacoplamiento de eventos CustomTkinter, aceleración gráfica con Matplotlib
+     (`draw_idle` / blitting), vectorización con NumPy y gestión de memoria.
+
+7. `07_trabajo_entre_modulos.txt`:
+   - Destino: Conversación dedicada a la arquitectura del sistema y bus de datos.
+   - Contenido: Orquestador `main.py`, contratos de datos entre pantallas, flujo de
+     navegación con precedencia estricta y persistencia jerárquica en `profiles/`.
+
+8. `08_debugging.txt`:
+   - Destino: Conversación dedicada a resolución de fallos y estabilidad.
+   - Contenido: Catálogo de bugs resueltos, casos límite de división por cero,
+     ejecución de headless tests en consola y diagnóstico de crashes en Windows.
+
+9. `09_funcionalidades_futuras.txt`:
+   - Destino: Conversación dedicada al roadmap evolutivo y nuevas features.
+   - Contenido: Especificaciones técnicas de Fases 4 y 5, meteorología dinámica,
+     gestión de juegos de gomas, importador de telemetría y generador de informes.
+
+--------------------------------------------------------------------------------
+CÓMO USARLOS AL INICIAR UNA NUEVA CONVERSACIÓN
+--------------------------------------------------------------------------------
+1. Abre una nueva conversación o sub-chat.
+2. Abre el archivo `.txt` correspondiente al tema que vas a trabajar.
+3. Copia su contenido o carga el archivo al inicio del chat.
+4. El agente asistente comprenderá instantáneamente todo el código, las fórmulas,
+   las restricciones del reglamento y los errores pasados que no debe repetir,
+   trabajando de forma 100% enfocada y eficiente.
+================================================================================

@@ -1,0 +1,56 @@
+{
+  "hard_base_lap": "01:44.700",
+  "hard_warmup": "1.300",
+  "hard_a": "0.2167",
+  "hard_n": "0.2599",
+  "hard_r2": "0.6331",
+  "hard_test_points": [
+    {
+      "lap": 2,
+      "delta": 0.393
+    },
+    {
+      "lap": 4,
+      "delta": 0.642
+    },
+    {
+      "lap": 6,
+      "delta": 0.506
+    },
+    {
+      "lap": 7,
+      "delta": 0.78
+    },
+    {
+      "lap": 8,
+      "delta": 0.647
+    },
+    {
+      "lap": 9,
+      "delta": 0.779
+    }
+  ],
+  "soft_base_lap": "01:43.700",
+  "soft_warmup": "0.500",
+  "soft_a": "1.9634",
+  "soft_n": "-0.6923",
+  "soft_r2": "0.9999",
+  "soft_test_points": [
+    {
+      "lap": 2,
+      "delta": 0.671
+    },
+    {
+      "lap": 4,
+      "delta": 2.02
+    },
+    {
+      "lap": 5,
+      "delta": 2.475
+    }
+  ],
+  "stint1_tyre": "soft",
+  "stint2_tyre": "hard",
+  "stint3_tyre": "hard",
+  "active_model": "Modelo 1"
+}

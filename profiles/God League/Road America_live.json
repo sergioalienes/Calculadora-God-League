@@ -1,0 +1,92 @@
+{
+  "race_header": {
+    "leader_lap": 0,
+    "leader_pace_s": 105.0,
+    "leader_pace_str": "01:45.000",
+    "leader_strategy": "1 Parada (Tanque Lleno)",
+    "leader_pit_loss_s": 38.0,
+    "race_dur_min": 60.0,
+    "time_rem_str": "01:00:00",
+    "rem_seconds": 3600.0,
+    "track_seconds": 3562.0,
+    "rem_laps": 34,
+    "total_projected_laps": 34
+  },
+  "pilots": [
+    {
+      "name": "Piloto 1 (NIX)",
+      "strategy_name": "⚡ Estrategia Óptima",
+      "initial_tyre_lap": "0",
+      "mounted_comp": "Prime (Duro)",
+      "meta_records": [],
+      "active_strategy": {
+        "num_stops": 1,
+        "p1": 15,
+        "p2": 0,
+        "stint1_comp": "hard",
+        "stint2_comp": "soft",
+        "stint3_comp": "soft",
+        "target_cons": [
+          5.65,
+          5.65
+        ],
+        "refuel_litres": [
+          30.0
+        ]
+      },
+      "tac_sc": false,
+      "tac_sc_sector": "Sector 1",
+      "tac_sc_dur": "3"
+    },
+    {
+      "name": "Piloto 2 (NIX)",
+      "strategy_name": "⚡ Estrategia Óptima",
+      "initial_tyre_lap": "0",
+      "mounted_comp": "Prime (Duro)",
+      "meta_records": [],
+      "active_strategy": {
+        "num_stops": 1,
+        "p1": 15,
+        "p2": 0,
+        "stint1_comp": "hard",
+        "stint2_comp": "soft",
+        "stint3_comp": "soft",
+        "target_cons": [
+          5.65,
+          5.65
+        ],
+        "refuel_litres": [
+          30.0
+        ]
+      },
+      "tac_sc": false,
+      "tac_sc_sector": "Sector 1",
+      "tac_sc_dur": "3"
+    },
+    {
+      "name": "Piloto 3 (NIX)",
+      "strategy_name": "⚡ Estrategia Óptima",
+      "initial_tyre_lap": "0",
+      "mounted_comp": "Prime (Duro)",
+      "meta_records": [],
+      "active_strategy": {
+        "num_stops": 1,
+        "p1": 15,
+        "p2": 0,
+        "stint1_comp": "hard",
+        "stint2_comp": "soft",
+        "stint3_comp": "soft",
+        "target_cons": [
+          5.65,
+          5.65
+        ],
+        "refuel_litres": [
+          30.0
+        ]
+      },
+      "tac_sc": false,
+      "tac_sc_sector": "Sector 1",
+      "tac_sc_dur": "3"
+    }
+  ]
+}

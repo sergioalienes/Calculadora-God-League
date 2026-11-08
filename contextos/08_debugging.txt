@@ -1,0 +1,127 @@
+================================================================================
+CONTEXTO ESPECÍFICO — CONVERSACIÓN PARA DEBUGGING Y RESOLUCIÓN DE ERRORES
+Calculadora God League — Suite Universal de Estrategia (Team NIX Esports)
+Área: Catálogo de Bugs Resueltos, Casos Límite, Headless Testing y Diagnóstico GUI
+================================================================================
+
+1. OBJETIVO DE ESTA CONVERSACIÓN
+--------------------------------------------------------------------------------
+Esta conversación está dedicada a la depuración técnica, localización y resolución
+de fallos (debugging), análisis de casos límite (edge cases), pruebas automatizadas
+y diagnóstico de excepciones en la Calculadora God League.
+Contiene el historial exhaustivo de problemas resueltos y los protocolos para
+solucionar anomalías sin degradar la estabilidad de la aplicación.
+
+2. CATÁLOGO DE BUGS RESUELTOS Y ANÁLISIS POST-MORTEM (NO REPETIR)
+--------------------------------------------------------------------------------
+2.1. BUG DE DIVISIÓN POR CERO EN CTKSLIDER (`from_ == to_`)
+- Síntoma: Crash inmediato con `ZeroDivisionError: float division by zero` en
+  el archivo interno `customtkinter/windows/widgets/ctk_slider.py` línea 184.
+- Causa raíz: En circuitos muy cortos o con stints extremadamente limitados,
+  el rango de vueltas viables de parada se reducía a exactamente una vuelta (ej. min=15, max=15).
+  Al calcular el porcentaje del slider: `(val - from_) / (to_ - from_)`, `(to_ - from_) == 0`.
+- Solución implementada:
+  Cuando `min_stop >= max_stop`:
+  Se oculta el `CTkSlider` interactivo y se muestra un `_slider_dummy` inerte
+  con una etiqueta fija que indica "Vuelta fija: X (Única viable)". El slider
+  interactivo solo se activa cuando `max_stop > min_stop`.
+
+2.2. BUG DE DESTRUCCIÓN DE WIDGETS AL ARRASTRAR SLIDERS
+- Síntoma: Al mover el slider de parada, la interfaz sufría congelamientos, el ratón
+  perdía el control del botón y en ocasiones la ventana se cerraba sin mensaje de error.
+- Causa raíz: En el evento `_on_slider_moved()`, el código llamaba a `_build_sliders()`,
+  destruyendo (`destroy()`) el slider mientras el sistema operativo aún procesaba
+  los eventos del ratón `<B1-Motion>`.
+- Solución implementada:
+  Desacoplar radicalmente: `_build_sliders()` solo se invoca si el NÚMERO de paradas
+  cambia (ej. de 1 a 2). Cuando el slider se mueve, SOLO se recalculan los textos
+  de las tarjetas de información y se actualizan los valores en memoria.
+
+2.3. BUG DE RITMO BASE Y DELTA DE PESO INVERTIDO
+- Síntoma: Tiempos por vuelta irreales en los gráficos; a mitad de carrera los coches
+  rodaban 2 segundos más lentos a pesar de no haber desgaste extremo.
+- Causa raíz: El "Ritmo Base" se había conceptualizado erróneamente con tanque vacío (0L),
+  por lo que el algoritmo SUMABA una penalización por cada litro de combustible:
+  `Tiempo = Base + (Litros * penalización)`. Esto contradecía la telemetría real,
+  ya que los pilotos marcan su ritmo de referencia en clasificación o con tanque lleno.
+- Solución implementada:
+  El Ritmo Base se define a TANQUE LLENO (`tank_capacity`). Toda corrección de peso
+  a lo largo de la carrera es estrictamente NEGATIVA o CERO:
+    Δt_peso(F) = (F - capacidad_tanque) * (penalización_10L / 10.0) <= 0.000s
+
+2.4. BUG DE DISCONTINUIDAD VISUAL EN BOXES (CARRILEO HORIZONTAL)
+- Síntoma: El gráfico de Matplotlib mostraba un pico discontinuo o una caída vertical
+  que hacía incomprensible la vuelta de parada.
+- Solución implementada:
+  En la vuelta de parada (N_stop), el tiempo en pista es normal.
+  En la vuelta N_stop + 1 se aplica el tiempo de pitlane:
+    t_box = pitlane_loss + max(litros / rate, tyre_change)
+  Se conecta horizontalmente ("carrileo") la vuelta de box con la out-lap + pérdida
+  por calentar gomas, garantizando una lectura intuitiva para los ingenieros de Team NIX.
+
+2.5. BUG DE PARADAS INVIABLES SELECCIONABLES (LIMITE -20%)
+- Síntoma: En circuitos de alto consumo como Spa/Bélgica (31 vueltas, 5.65 L/v, tanque 70L),
+  la app permitía seleccionar "1 Parada". Al calcular el consumo necesario para 1 parada
+  (stints de 15.5 vueltas -> 4.51 L/v), exigía un ahorro del 20.2%, provocando que el
+  coche se quedara sin gasolina en pista.
+- Solución implementada:
+  Doble filtro matemático de viabilidad: descarta automáticamente cualquier estrategia
+  cuyo stint exija más del 20% de ahorro (`c_target < 0.80 * c_base`). En Bélgica,
+  el selector oculta "1 Parada" y fuerza `['2 Paradas']`.
+
+2.6. BUG DE PARADA OBLIGATORIA POR REGLAMENTO
+- Síntoma: El algoritmo de combustible sugería "0 Paradas" si el tiempo de carrera era
+  corto o el tanque muy grande.
+- Solución implementada:
+  Forzar reglamentariamente mínimo 1 parada (`k_save = max(1, k_save_calc)`),
+  ya que el cambio de compuesto es obligatorio.
+
+2.7. BUG DE MATRIZ SINGULAR EN AJUSTE OLS DE NEUMÁTICOS
+- Síntoma: `ZeroDivisionError` en `Cov(u, delta) / Var(u)` si el usuario ingresaba
+  puntos de telemetría con la misma vuelta (ej. vuelta 5 y vuelta 5) o una sola vuelta.
+- Solución implementada:
+  Validar que haya al menos 2 puntos con vueltas distintas (x >= 2), comprobar
+  `Var(u) > 1e-9`, y si no es válido, aplicar degradación lineal conservadora de respaldo.
+
+3. METODOLOGÍA DE PRUEBAS RÁPIDAS EN CONSOLA (HEADLESS TESTS)
+--------------------------------------------------------------------------------
+Para verificar la lógica de cualquier módulo sin necesidad de abrir la interfaz gráfica
+ni esperar a que se carguen las librerías visuales:
+
+Ejemplo de script de prueba matemática (ejecutable en terminal):
+```python
+import numpy as np
+import math
+
+# Simulación rápida de viabilidad de paradas
+def check_viability(race_time_m, lap_time_s, fuel_per_lap, tank_cap):
+    total_laps = math.floor((race_time_m * 60) / lap_time_s) + 1
+    max_laps_push = math.floor((tank_cap - 2.0) / fuel_per_lap)
+    max_laps_save = math.floor((tank_cap - 2.0) / (fuel_per_lap * 0.80))
+    print(f"Vueltas totales: {total_laps}")
+    print(f"Max vueltas stint PUSH: {max_laps_push} | SAVE (-20%): {max_laps_save}")
+    k1_viable = (max_laps_save * 2) >= total_laps
+    print(f"¿1 Parada viable?: {k1_viable}")
+
+check_viability(60, 137.5, 5.65, 70.0) # Caso Bélgica
+```
+
+4. INSPECCIÓN Y RECUPERACIÓN DE PERFILES JSON CORRUPTOS
+--------------------------------------------------------------------------------
+- Los archivos en `profiles/<campeonato>/` deben ser JSON estrictos UTF-8.
+- Si un archivo JSON está corrupto (ej. cierre abrupto del PC o edición manual con errores):
+  * La app debe capturar `json.JSONDecodeError` mediante un bloque `try...except`.
+  * Mostrar una advertencia al usuario y cargar valores predeterminados seguros
+    en lugar de crashear la aplicación completa.
+
+5. PROTOCOLO DE DIAGNÓSTICO EN CASO DE NUEVOS ERRORES
+--------------------------------------------------------------------------------
+Paso 1: Reproducir el error en la terminal ejecutando `python main.py` para capturar
+        el traceback completo en stdout/stderr.
+Paso 2: Aislar si el fallo es de LÓGICA MATEMÁTICA (cálculo, división por cero, tipos)
+        o de FRONTEND (CustomTkinter, Tkinter event loop, Matplotlib).
+Paso 3: Comprobar que los tipos de datos sean correctos:
+        Siempre usar `float(re.sub(r"[^\d.]", "", val))` para inputs de texto.
+Paso 4: Verificar que no se violen las restricciones físicas (tanque <= capacidad,
+        ahorro <= 20%, paradas >= 1).
+================================================================================

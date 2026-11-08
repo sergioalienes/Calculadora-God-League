@@ -1,0 +1,103 @@
+================================================================================
+CONTEXTO ESPECÍFICO — CONVERSACIÓN PARA EL MÓDULO DE ESTRATEGIAS
+Calculadora God League — Suite Universal de Estrategia (Team NIX Esports)
+Archivo: modules/strategy_charts.py (Módulo 4 — Comparador Multi-Estrategia)
+================================================================================
+
+1. OBJETIVO DE ESTA CONVERSACIÓN
+--------------------------------------------------------------------------------
+Esta conversación está dedicada al diseño, implementación matemática y desarrollo
+gráfico del MÓDULO 4: COMPARADOR GLOBAL DE ESTRATEGIAS (Fase 4).
+Su misión es comparar simultáneamente múltiples alternativas estratégicas viables
+(ej. 1 Parada en ahorro vs 2 Paradas al sprint, o secuencia Prime-Alt vs Alt-Prime),
+calcular el tiempo total acumulado de carrera vuelta a vuelta, evaluar ventanas
+de Undercut / Overcut y determinar matemáticamente cuál es la estrategia óptima
+para Team NIX Esports en cada carrera de iRacing.
+
+2. ARQUITECTURA Y ESTADO ACTUAL
+--------------------------------------------------------------------------------
+- Ruta del código: `E:\Calculadora God League\modules\strategy_charts.py`
+- Estado: Actualmente es un STUB informativo con placeholder visual en espera de
+  la implementación completa de la Fase 4.
+- Clase principal a desarrollar: `StrategyChartsModule(ctk.CTkFrame)`
+- Conexión: Se integra en `main.py` y recibe datos procesados del Módulo 1 (circuito),
+  Módulo 2 (combustible y paradas viables) y Módulo 3 (curvas OLS de neumáticos y peso).
+
+3. FÍSICA Y MODELADO COMPARATIVO DE CARRERA COMPLETA
+--------------------------------------------------------------------------------
+3.1. TIEMPO ACUMULADO DE CARRERA (RACE TIME SIMULATION)
+Para cada estrategia evaluada e ∈ {Estrategia A, Estrategia B, Estrategia C...}:
+  T_total(e) = ∑_{v=1}^{N_vueltas} t_lap(v, e) + ∑_{p=1}^{N_paradas} t_pit(p, e)
+Donde el tiempo de cada vuelta t_lap(v, e) incorpora:
+  1. Compuesto montado en esa vuelta (Prime o Alternative).
+  2. Vida del neumático x:
+     - x = 0: Ritmo_Base + Pérdida_Calentar_Rueda + Δt_peso(F_v)
+     - x = 1: Ritmo_Base + 0.000s + Δt_peso(F_v)
+     - x >= 2: Ritmo_Base + max(0.0, a * ln(x) + n) + Δt_peso(F_v)
+  3. Delta de peso de combustible según litros en tanque en la vuelta v:
+     Δt_peso(F_v) = (F_v - capacidad_tanque) * sensibilidad_peso <= 0.000s
+  4. Modo de conducción del stint (Push vs Ahorro):
+     Si el stint requiere ahorro (ej. c_target < c_base), se suma la penalización
+     por lift & coast:
+       Δt_ahorro = Factor_ahorro_segundos_por_litro * (c_base - c_target)
+  5. Tiempos de parada t_pit:
+     t_pit = pitlane_loss + max(litros_cargados / refuel_rate, tyre_change_time)
+
+3.2. CÁLCULO DE DELTA ACUMULADO Y ANÁLISIS DE UNDERCUT / OVERCUT
+- Se selecciona una "Estrategia Base" (por ejemplo, Estrategia A: 1 Parada).
+- Para cada vuelta v, se calcula el delta acumulado respecto a la base:
+    ΔT_acumulado(v, B vs A) = T_acumulado(v, B) - T_acumulado(v, A)
+  * Si ΔT < 0: La Estrategia B va por delante en la pista en tiempo virtual neto.
+  * Si ΔT > 0: La Estrategia A lidera.
+- Análisis de Undercut:
+  Visualizar si parar 2 vueltas antes con gomas blandas nuevas permite rodar lo
+  suficientemente rápido como para salir por delante del rival cuando este cumpla
+  su parada 2 vueltas después.
+- Análisis de Overcut:
+  Evaluar si mantenerse en pista con gomas duras usadas y coche muy ligero (5-10L)
+  compensa el tiempo que pierde el rival en su out-lap con ruedas frías (+0.8s) y
+  tanque recién llenado a 70L (-0.0s vs -0.9s de delta de peso).
+
+4. DISEÑO DE LA INTERFAZ Y GRÁFICOS (CUSTOMTKINTER + MATPLOTLIB)
+--------------------------------------------------------------------------------
+4.1. PANEL SUPERIOR DE CONFIGURACIÓN Y SELECTORES
+- Checkboxes para activar/desactivar estrategias a comparar:
+  * [✔] Estrategia 1: 1 Parada (Prime -> Alt)
+  * [✔] Estrategia 2: 2 Paradas (Alt -> Prime -> Alt - Sprint)
+  * [ ] Estrategia 3: 2 Paradas (Prime -> Prime -> Alt)
+- Botón "Simular y Comparar": Ejecuta el cálculo matricial en < 20 ms.
+
+4.2. VISUALIZADOR GRÁFICO DUAL (DOS PESTAÑAS O SUBPLOTS)
+- Gráfico A (Tiempos por Vuelta):
+  Curvas superpuestas de tiempo por vuelta (formato MM:SS.ms) con marcadores
+  distintos por cada estrategia (círculos, triángulos, líneas punteadas).
+- Gráfico B (Delta Acumulado en Pista):
+  Línea horizontal en Y = 0 (Estrategia Base).
+  Curvas que suben o bajan según la ventaja en segundos a lo largo de las N vueltas.
+
+4.3. TARJETA RESUMEN DE TIEMPOS TOTALES (PODIO ESTRATÉGICO)
+- Card destacada con diseño corporativo NIX Esports:
+  * 🥇 1.º: Estrategia B — 1h 00m 42.150s  (ÓPTIMA)
+  * 🥈 2.º: Estrategia A — 1h 00m 47.820s  (+5.670s)
+  * 🥉 3.º: Estrategia C — 1h 01m 02.400s  (+20.250s)
+
+5. INTERFAZ DE ENLACE CON LOS DEMÁS MÓDULOS
+--------------------------------------------------------------------------------
+- Entrada:
+  * `session_data` (Módulo 1): vueltas totales, capacidad tanque, pitlane loss.
+  * `fuel_strategy_data` (Módulo 2): paradas viables, vueltas de stint, litros.
+  * `tyre_strategy_data` (Módulo 3): parámetros a, n, ritmo base, pérdida calentar.
+- Salida:
+  * Estrategia recomendada activa enviada a Módulo 5 (`live_control.py`) como plan
+    maestro para contrastar con la telemetría en tiempo real.
+
+6. PASOS INMEDIATOS DE IMPLEMENTACIÓN (PLAN DE TRABAJO FASE 4)
+--------------------------------------------------------------------------------
+1. Reemplazar el layout placeholder de `strategy_charts.py` con una cuadrícula
+   de dos filas (panel de control + lienzo de Matplotlib).
+2. Crear la función `simulate_strategy(config)` que vectoriza el cálculo de
+   tiempos de vuelta y boxes.
+3. Integrar el método `on_data_updated(session_data, fuel_data, tyre_data)`
+   conectado al sistema de navegación de `main.py`.
+4. Añadir exportación de informe gráfico en PNG para el canal de Discord de Team NIX.
+================================================================================

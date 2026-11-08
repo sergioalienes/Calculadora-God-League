@@ -1,0 +1,131 @@
+{
+  "race_header": {
+    "leader_lap": 4,
+    "leader_pace_s": 421.0,
+    "leader_pace_str": "07:01.000",
+    "leader_strategy": "2 Paradas (1ª Tanque + 2ª Ruedas)",
+    "leader_pit_loss_s": 62.0,
+    "race_dur_min": 60.0,
+    "time_rem_str": "00:31:56",
+    "rem_seconds": 1916.0,
+    "track_seconds": 1854.0,
+    "rem_laps": 5,
+    "total_projected_laps": 9
+  },
+  "pilots": [
+    {
+      "name": "Diego Cayón Masturbinho",
+      "strategy_name": "4-3-2",
+      "initial_tyre_lap": "0",
+      "mounted_comp": "Prime (Duro)",
+      "meta_records": [],
+      "active_strategy": {
+        "num_stops": 2,
+        "p1": 4,
+        "p2": 7,
+        "stint1_comp": "hard",
+        "stint2_comp": "hard",
+        "stint3_comp": "soft",
+        "target_cons": [
+          17.4,
+          20.0,
+          20.0
+        ],
+        "fuel_plan": [
+          52.6,
+          35.2,
+          17.800000000000004,
+          0.4000000000000057,
+          40.4,
+          20.4,
+          0.3999999999999986,
+          20.4,
+          0.3999999999999986
+        ],
+        "refuel_litres": [
+          59.99999999999999,
+          40.0
+        ]
+      },
+      "tac_sc": false,
+      "tac_sc_sector": "Sector 1",
+      "tac_sc_dur": "3"
+    },
+    {
+      "name": "Jimper",
+      "strategy_name": "4-3-2",
+      "initial_tyre_lap": "0",
+      "mounted_comp": "Prime (Duro)",
+      "meta_records": [],
+      "active_strategy": {
+        "num_stops": 2,
+        "p1": 4,
+        "p2": 7,
+        "stint1_comp": "hard",
+        "stint2_comp": "hard",
+        "stint3_comp": "soft",
+        "target_cons": [
+          17.4,
+          20.0,
+          20.0
+        ],
+        "fuel_plan": [
+          52.6,
+          35.2,
+          17.800000000000004,
+          0.4000000000000057,
+          40.4,
+          20.4,
+          0.3999999999999986,
+          20.4,
+          0.3999999999999986
+        ],
+        "refuel_litres": [
+          59.99999999999999,
+          40.0
+        ]
+      },
+      "tac_sc": false,
+      "tac_sc_sector": "Sector 1",
+      "tac_sc_dur": "3"
+    },
+    {
+      "name": "Fernandin",
+      "strategy_name": "4-3-2",
+      "initial_tyre_lap": "0",
+      "mounted_comp": "Prime (Duro)",
+      "meta_records": [],
+      "active_strategy": {
+        "num_stops": 2,
+        "p1": 4,
+        "p2": 7,
+        "stint1_comp": "hard",
+        "stint2_comp": "hard",
+        "stint3_comp": "soft",
+        "target_cons": [
+          17.4,
+          20.0,
+          20.0
+        ],
+        "fuel_plan": [
+          52.6,
+          35.2,
+          17.800000000000004,
+          0.4000000000000057,
+          40.4,
+          20.4,
+          0.3999999999999986,
+          20.4,
+          0.3999999999999986
+        ],
+        "refuel_litres": [
+          59.99999999999999,
+          40.0
+        ]
+      },
+      "tac_sc": false,
+      "tac_sc_sector": "Sector 1",
+      "tac_sc_dur": "3"
+    }
+  ]
+}

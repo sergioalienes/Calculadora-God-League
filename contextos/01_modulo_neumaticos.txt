@@ -1,0 +1,105 @@
+================================================================================
+CONTEXTO ESPECÍFICO — CONVERSACIÓN PARA EL MÓDULO DE NEUMÁTICOS
+Calculadora God League — Suite Universal de Estrategia (Team NIX Esports)
+Archivo: modules/tyre_strategy.py (Módulo 3)
+================================================================================
+
+1. OBJETIVO DE ESTA CONVERSACIÓN
+--------------------------------------------------------------------------------
+Esta conversación está dedicada exclusivamente al desarrollo, mantenimiento,
+refactorización y ampliación matemática del MÓDULO 3: ESTRATEGIA DE NEUMÁTICOS.
+Su responsabilidad es modelar la degradación temporal de cada compuesto de goma
+vuelta a vuelta, calcular el impacto del peso de combustible en el tiempo por vuelta,
+gestionar la asignación de compuestos por stint y simular el tiempo total de carrera
+mediante gráficos interactivos de Matplotlib embebidos en CustomTkinter.
+
+2. ARQUITECTURA DEL ARCHIVO Y RESPONSABILIDADES
+--------------------------------------------------------------------------------
+- Ruta del código: `E:\Calculadora God League\modules\tyre_strategy.py`
+- Clase principal: `TyreStrategyModule(ctk.CTkFrame)`
+- Persistencia: `profiles/<campeonato>/<circuito>_tyres.json`
+- Dependencias: `numpy`, `matplotlib.backends.backend_tkagg.FigureCanvasTkAgg`,
+  `customtkinter`, `math`, `json`, `re`, `pathlib.Path`.
+
+3. MODELADO MATEMÁTICO Y FÍSICO DE LOS NEUMÁTICOS
+--------------------------------------------------------------------------------
+3.1. RITMO BASE A TANQUE LLENO (CALIBRACIÓN FÍSICA FUNDAMENTAL)
+- El "Ritmo Base" ingresado por el usuario para cada compuesto (ej. Prime = 01:24.500,
+  Alternative = 01:24.050) representa el tiempo que el piloto marca en la VUELTA 1
+  con gomas en temperatura de trabajo Y CON TANQUE DE COMBUSTIBLE AL 100% (capacidad
+  máxima del vehículo, por ejemplo 70L en Dallara IR-18, 105L en GT3, 110L en GTP).
+- Toda corrección por peso a lo largo del stint es estrictamente NEGATIVA o CERO
+  a medida que se quema combustible y el coche se vuelve más ligero:
+    Δt_peso(F) = (F - capacidad_tanque) * sensibilidad_peso <= 0.000s
+  Donde:
+    * F = litros actuales de combustible al inicio de la vuelta.
+    * capacidad_tanque = float(session_data.get("fuel_capacity_l", 70.0)).
+    * sensibilidad_peso = float(session_data.get("weight_penalty_s_per_10l", 0.150)) / 10.0.
+    * Cuando el tanque está lleno (F = capacidad), Δt_peso = 0.000s.
+    * Con 10L en el tanque (60L consumidos): Δt_peso = (10 - 70) * 0.015 = -0.900s.
+
+3.2. FUNCIÓN A TRAMOS ESTRICTA SEGÚN LA VIDA DEL NEUMÁTICO (x)
+Sea x el contador de vueltas completadas con ese juego de neumáticos en el stint actual:
+  * x = 0 (Vuelta de salida de boxes / Out-lap / Salida de carrera):
+      Gomas frías fuera de su ventana de temperatura óptima.
+      Tiempo(x=0) = Ritmo_Base + Pérdida_Calentar_Rueda + Δt_peso(F)
+      - Pérdida_Calentar_Rueda: Configurable por compuesto (ej. +0.800s en Prime, +0.400s en Alt).
+  * x = 1 (Vuelta en ventana óptima de trabajo / "Sweet Spot"):
+      El neumático está en temperatura ideal y no ha sufrido degradación térmica ni estructural.
+      Tiempo(x=1) = Ritmo_Base + 0.000s + Δt_peso(F)  [Δdeg = 0.000s forzado].
+  * x >= 2 (Degradación logarítmica progresiva):
+      Tiempo(x >= 2) = Ritmo_Base + max(0.0, a * ln(x) + n) + Δt_peso(F)
+      - Parámetros a y n ajustados por Mínimos Cuadrados Ordinarios (OLS) sobre la variable u = ln(x).
+
+3.3. AJUSTE LOGARÍTMICO OLS PARA MAXIMIZAR R²
+Dado un conjunto de puntos de telemetría de degradación (vueltas x_i vs delta_i):
+  u_i = ln(x_i)
+  a = Cov(u, delta) / Var(u)
+  n = media(delta) - a * media(u)
+  R² = Cov(u, delta)² / (Var(u) * Var(delta))
+Se restringe a >= 0 para garantizar que la degradación sea monótona no decreciente.
+
+3.4. TIEMPO EN BOXES DINÁMICO Y CARRILEO HORIZONTAL
+- En la vuelta de parada (vuelta N_stop):
+  * El coche completa la vuelta en pista normalmente.
+  * En la vuelta N_stop + 1 se aplica el tiempo perdido en el pitlane:
+      t_box = pitlane_loss + max(litros_a_cargar / refuel_rate, tyre_change_time)
+  * Para que el gráfico sea continuo y legible para los ingenieros de Team NIX:
+    Se dibuja una línea horizontal ("carrileo") que conecta el tiempo de box con
+    la vuelta N_stop + 1 + pérdida de calentar ruedas, manteniendo la coherencia visual.
+
+4. SINCRONIZACIÓN CON EL MÓDULO DE COMBUSTIBLE
+--------------------------------------------------------------------------------
+- El módulo de neumáticos NO permite sliders con paradas imposibles.
+- Recibe del Módulo 2 (`fuel_strategy.py`) el diccionario `viable_modes` a través de:
+    `on_fuel_strategy_updated(fuel_data)`
+- Si el módulo de combustible determina que una estrategia de 1 parada no es viable
+  (porque el coche no puede ahorrar más del 20% sin quedarse tirado), el selector de
+  paradas de neumáticos oculta o deshabilita la opción "1 Parada" y fuerza las opciones
+  viables (ej. "2 Paradas").
+- Por reglamento deportivo, el número mínimo de paradas es 1 (obligación de cambio
+  de compuesto). "0 Paradas" está descartado.
+
+5. HISTORIAL DE ERRORES CORREGIDOS (NO REPETIR)
+--------------------------------------------------------------------------------
+1. Confusión de Ritmo Base: Antes se tomaba con tanque vacío, generando tiempos
+   inconsistentes. CORREGIDO: Siempre con tanque lleno (`fuel_capacity_l`).
+2. Vuelta 1 plana: En versiones anteriores la vuelta 1 se aplanaba artificialmente.
+   CORREGIDO: La vuelta 0 tiene la pérdida de calentar gomas, y la vuelta 1 es el ritmo base.
+3. Sliders con división por cero: Cuando min_stop == max_stop, `CTkSlider` crasheaba.
+   CORREGIDO: Se sustituye dinámicamente por un `_slider_dummy` inerte si el rango es 0.
+4. Paradas no viables seleccionables: El usuario podía elegir 1 parada en Bélgica (31 v)
+   con tanque de 70L y consumo de 5.65 L/v (máximo 12+12=24v). CORREGIDO: Filtrado estricto
+   adoptando `viable_modes` de combustible.
+
+6. ROADMAP Y PLANES FUTUROS DEL MÓDULO DE NEUMÁTICOS
+--------------------------------------------------------------------------------
+- Subida de telemetría por archivo CSV / IBT de iRacing: Parsear automáticamente
+  las vueltas del stint de prácticas y ajustar a y n sin que el piloto tenga que
+  teclear punto por punto.
+- Modelado térmico según temperatura de pista: Si la pista sube de 25°C a 42°C,
+  escalar el coeficiente de degradación a en función de una sensibilidad térmica configurable.
+- Comparativa lado a lado entre compuestos: Gráfico con dos curvas superpuestas
+  (Prime vs Alternative) para identificar el "Crossover Lap" (vuelta exacta en la que
+  el neumático blando se vuelve más lento que el neumático duro debido al desgaste).
+================================================================================

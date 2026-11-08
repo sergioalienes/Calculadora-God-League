@@ -1,0 +1,119 @@
+================================================================================
+CONTEXTO ESPECÍFICO — CONVERSACIÓN PARA EL TRABAJO ENTRE MÓDULOS Y ARQUITECTURA
+Calculadora God League — Suite Universal de Estrategia (Team NIX Esports)
+Área: Bus de Datos, Contratos de Interfaz, Sincronización y Persistencia Centralizada
+================================================================================
+
+1. OBJETIVO DE ESTA CONVERSACIÓN
+--------------------------------------------------------------------------------
+Esta conversación está dedicada a la arquitectura global del sistema, los contratos
+de datos entre módulos, el orquestador central (`main.py`), la sincronización
+reactiva de eventos y el esquema de persistencia en disco.
+Su finalidad es garantizar que cualquier cambio realizado en un módulo (ej. combustible
+o campeonato) se propague de manera coherente, segura y sin dependencias circulares
+hacia los demás módulos de la aplicación.
+
+2. EL ORQUESTADOR CENTRAL (MAIN.PY)
+--------------------------------------------------------------------------------
+- Clase: `CalculadoraApp(ctk.CTk)`
+- Responsabilidades de `main.py`:
+  1. Instanciar y registrar los 5 módulos dentro del contenedor dinámico `_content_container`.
+  2. Distribuir el tema gráfico corporativo de Team NIX Esports (`COLORS`).
+  3. Gestionar la navegación lateral (`navigate_to(module_id)`).
+  4. Sincronizar el flujo de datos entre pantallas con estricto orden de precedencia.
+  5. Cargar y persistir el estado de la última sesión abierta en `profiles/_last_state.json`.
+
+3. CONTRATOS DE DATOS E INTERFACES ENTRE MÓDULOS
+--------------------------------------------------------------------------------
+3.1. MÓDULO 1 (CHAMPIONSHIP DATA) -> MAIN.PY -> TODOS LOS MÓDULOS
+- Método emisor: `championship_mod.get_session_data()`
+- Devuelve un diccionario consolidado que combina:
+  * Constantes del Campeonato (`_campeonato.json`):
+    - `championship_name`: str
+    - `car`: str (ej. "Dallara IR-18", "Ferrari 296 GT3")
+    - `fuel_capacity_l`: float (ej. 70.0, 105.0)
+    - `refuel_rate_ls`: float (ej. 12.0)
+    - `race_duration_minutes`: float (ej. 60.0)
+    - `tyre_change_s`: float (ej. 4.0)
+    - `mandatory_compounds`: bool (True si el reglamento exige 2 compuestos)
+  * Variables del Circuito (`<circuito>.json`):
+    - `circuit_name`: str (ej. "Bélgica", "Road America")
+    - `base_lap_time_s`: float (segundos de vuelta de referencia)
+    - `pitlane_loss_s`: float (tiempo de tránsito por calle de boxes)
+    - `fuel_per_lap_l`: float (consumo base en modo push)
+    - `weight_penalty_s_per_10l`: float (penalización por cada 10L)
+- Cuándo se propaga:
+  Al pulsar "Guardar Sesión", al cambiar de circuito en el combobox o durante
+  el arranque de la aplicación al restaurar `_last_state.json`.
+
+3.2. MÓDULO 2 (COMBUSTIBLE) -> MAIN.PY -> MÓDULO 3 (NEUMÁTICOS)
+- Método emisor: `fuel_mod.get_fuel_strategy_data()`
+- Estructura del diccionario exportado:
+  {
+    "stops_count": int,          # Ej. 1 o 2
+    "stint_laps": list[int],     # Ej. [15, 16]
+    "pit_laps": list[int],       # Ej. [15]
+    "fuel_per_stint": list[float], # Ej. [70.0, 68.4]
+    "refuel_litres": list[float],# Ej. [65.2]
+    "pit_times": list[float],    # Ej. [28.4] (pitlane + max(manguera, gomas))
+    "target_consumption": list[float], # Ej. [4.66, 4.27] L/v
+    "viable_modes": list[str]    # Ej. ['1 Parada', '2 Paradas'] o sólo ['2 Paradas']
+  }
+- Método receptor: `tyre_mod.on_fuel_strategy_updated(fuel_data)`
+  * Adopta `viable_modes`: Si en Spa 1 parada es imposible (ahorro > 20%), el botón
+    segmentado de paradas en neumáticos se bloquea en `['2 Paradas']`.
+  * Restringe los sliders de parada a las vueltas viables calculadas por combustible.
+  * Inyecta los litros cargados y los tiempos de parada en el cálculo del tiempo total.
+  * Inyecta la curva de peso real para el cálculo de Δt_peso(F) vuelta a vuelta.
+
+3.3. ORDEN CRÍTICO DE PRECEDENCIA EN NAVEGACIÓN (`NAVIGATE_TO`)
+En `main.py`, la función `navigate_to()` sigue una secuencia estricta:
+  ```python
+  if module_id == "fuel":
+      sdata = self._modules["championship"].get_session_data()
+      self._modules["fuel"].on_session_data_updated(sdata)
+
+  elif module_id == "tyres":
+      sdata = self._modules["championship"].get_session_data()
+      # 1. Actualizar combustible primero para cargar el JSON del circuito
+      self._modules["fuel"].on_session_data_updated(sdata)
+      # 2. Extraer datos de viabilidad de combustible calculados
+      fdata = self._modules["fuel"].get_fuel_strategy_data()
+      # 3. Pasar sesión y combustible a neumáticos
+      self._modules["tyres"].on_session_data_updated(sdata)
+      self._modules["tyres"].on_fuel_strategy_updated(fdata)
+  ```
+Este orden elimina cualquier posibilidad de inconsistencia o datos cruzados de
+circuitos anteriores al cambiar de pantalla.
+
+4. ESTRUCTURA DE PERSISTENCIA Y CICLO DE VIDA DE ARCHIVOS
+--------------------------------------------------------------------------------
+La jerarquía de almacenamiento está desacoplada en `profiles/`:
+  profiles/
+  ├── _last_state.json        # {"last_module": str, "championship": str, "circuit": str}
+  └── <Nombre_Campeonato>/
+      ├── _campeonato.json    # Constantes físicas y de reglamento
+      ├── <Circuito>.json     # Variables del trazado
+      ├── <Circuito>_fuel.json# Estrategia de combustible guardada
+      └── <Circuito>_tyres.json# Modelado de neumáticos y stints guardado
+
+4.1. OPERACIONES CRUD EN CASCADA
+- Borrado de Circuito: Al borrar un circuito en el Módulo 1, se eliminan
+  automáticamente sus archivos asociados `<Circuito>.json`, `<Circuito>_fuel.json`
+  y `<Circuito>_tyres.json`.
+- Borrado de Campeonato: Se elimina recursivamente la carpeta completa del campeonato.
+- Recarga independiente: Los botones "Recargar" en combustible y neumáticos leen
+  directamente el JSON correspondiente en disco y restauran el estado sin alterar
+  el resto de módulos.
+
+5. PAUTAS PARA AÑADIR NUEVOS MÓDULOS (FASES 4 Y 5)
+--------------------------------------------------------------------------------
+1. Principio de Bajo Acoplamiento: Ningún módulo secundario debe importar a otro
+   módulo secundario (ej. `tyre_strategy.py` NUNCA hace `import fuel_strategy`).
+   Toda comunicación es mediada por `main.py` mediante diccionarios agnósticos.
+2. Contrato de Módulo: Todo nuevo módulo debe ser subclase de `ctk.CTkFrame` y aceptar
+   `(parent, colors, **kwargs)` en su `__init__`.
+3. Métodos estándar obligatorios:
+   - `on_session_data_updated(session_data: dict)`
+   - `get_strategy_data() -> dict` (si exporta información para otros módulos)
+================================================================================

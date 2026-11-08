@@ -1,0 +1,208 @@
+{
+  "Modelo 1": {
+    "hard_base_lap": "01:57.500",
+    "hard_warmup": "1.8",
+    "hard_a": "0.5739",
+    "hard_n": "-0.0186",
+    "hard_r2": "0.9934",
+    "hard_test_points": [
+      {
+        "lap": 1,
+        "delta": 0.0
+      },
+      {
+        "lap": 2,
+        "delta": 0.328
+      },
+      {
+        "lap": 3,
+        "delta": 0.63
+      },
+      {
+        "lap": 4,
+        "delta": 0.806
+      },
+      {
+        "lap": 5,
+        "delta": 0.932
+      },
+      {
+        "lap": 6,
+        "delta": 1.029
+      },
+      {
+        "lap": 7,
+        "delta": 1.108
+      },
+      {
+        "lap": 8,
+        "delta": 1.175
+      },
+      {
+        "lap": 9,
+        "delta": 1.234
+      },
+      {
+        "lap": 10,
+        "delta": 1.285
+      },
+      {
+        "lap": 11,
+        "delta": 1.331
+      }
+    ],
+    "soft_base_lap": "01:56.5",
+    "soft_warmup": "0.8",
+    "soft_a": "1.4881",
+    "soft_n": "0.5102",
+    "soft_r2": "0.9921",
+    "soft_test_points": [
+      {
+        "lap": 1,
+        "delta": 0.0
+      },
+      {
+        "lap": 2,
+        "delta": 1.411
+      },
+      {
+        "lap": 3,
+        "delta": 2.206
+      },
+      {
+        "lap": 4,
+        "delta": 2.654
+      },
+      {
+        "lap": 5,
+        "delta": 2.971
+      },
+      {
+        "lap": 6,
+        "delta": 3.217
+      },
+      {
+        "lap": 7,
+        "delta": 3.418
+      },
+      {
+        "lap": 8,
+        "delta": 3.589
+      },
+      {
+        "lap": 9,
+        "delta": 3.736
+      },
+      {
+        "lap": 10,
+        "delta": 3.866
+      }
+    ],
+    "stint1_tyre": "hard",
+    "stint2_tyre": "hard",
+    "stint3_tyre": "soft"
+  },
+  "Prueba 1": {
+    "hard_base_lap": "01:57.500",
+    "hard_warmup": "1.8",
+    "hard_a": "0.5739",
+    "hard_n": "-0.0186",
+    "hard_r2": "0.9934",
+    "hard_test_points": [
+      {
+        "lap": 1,
+        "delta": 0.0
+      },
+      {
+        "lap": 2,
+        "delta": 0.328
+      },
+      {
+        "lap": 3,
+        "delta": 0.63
+      },
+      {
+        "lap": 4,
+        "delta": 0.806
+      },
+      {
+        "lap": 5,
+        "delta": 0.932
+      },
+      {
+        "lap": 6,
+        "delta": 1.029
+      },
+      {
+        "lap": 7,
+        "delta": 1.108
+      },
+      {
+        "lap": 8,
+        "delta": 1.175
+      },
+      {
+        "lap": 9,
+        "delta": 1.234
+      },
+      {
+        "lap": 10,
+        "delta": 1.285
+      },
+      {
+        "lap": 11,
+        "delta": 1.331
+      }
+    ],
+    "soft_base_lap": "01:56.5",
+    "soft_warmup": "0.8",
+    "soft_a": "1.4881",
+    "soft_n": "0.5102",
+    "soft_r2": "0.9921",
+    "soft_test_points": [
+      {
+        "lap": 1,
+        "delta": 0.0
+      },
+      {
+        "lap": 2,
+        "delta": 1.411
+      },
+      {
+        "lap": 3,
+        "delta": 2.206
+      },
+      {
+        "lap": 4,
+        "delta": 2.654
+      },
+      {
+        "lap": 5,
+        "delta": 2.971
+      },
+      {
+        "lap": 6,
+        "delta": 3.217
+      },
+      {
+        "lap": 7,
+        "delta": 3.418
+      },
+      {
+        "lap": 8,
+        "delta": 3.589
+      },
+      {
+        "lap": 9,
+        "delta": 3.736
+      },
+      {
+        "lap": 10,
+        "delta": 3.866
+      }
+    ],
+    "stint1_tyre": "hard",
+    "stint2_tyre": "hard",
+    "stint3_tyre": "soft"
+  }
+}

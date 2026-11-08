@@ -1,0 +1,14 @@
+{
+  "name": "God League",
+  "car": "Dallara IR-18",
+  "fuel_capacity_l": 70.0,
+  "refuel_rate_ls": 10.0,
+  "tyre_change_s": 5.0,
+  "car_lift_s": 1.0,
+  "race_duration_min": 60.0,
+  "tyre_compounds": [
+    "Prime (Duro)",
+    "Alternative (Blando)"
+  ],
+  "mandatory_compound_change": true
+}

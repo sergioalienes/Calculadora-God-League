@@ -1,0 +1,107 @@
+{
+  "Modelo 0": {
+    "hard_base_lap": "07:03.000",
+    "hard_warmup": "-0.4",
+    "hard_a": "0.7399",
+    "hard_n": "-0.2129",
+    "hard_r2": "1.0000",
+    "hard_test_points": [
+      {
+        "lap": 2,
+        "delta": 0.3
+      },
+      {
+        "lap": 3,
+        "delta": 0.6
+      }
+    ],
+    "soft_base_lap": "07:05.500",
+    "soft_warmup": "-3.7",
+    "soft_a": "2.4663",
+    "soft_n": "-0.2095",
+    "soft_r2": "1.0000",
+    "soft_test_points": [
+      {
+        "lap": 2,
+        "delta": 1.5
+      },
+      {
+        "lap": 3,
+        "delta": 2.5
+      }
+    ],
+    "stint1_tyre": "soft",
+    "stint2_tyre": "hard",
+    "stint3_tyre": "hard"
+  },
+  "Modelo 1": {
+    "hard_base_lap": "07:01.000",
+    "hard_warmup": "-0.2",
+    "hard_a": "0.7399",
+    "hard_n": "-0.2129",
+    "hard_r2": "1.0000",
+    "hard_test_points": [
+      {
+        "lap": 2,
+        "delta": 0.3
+      },
+      {
+        "lap": 3,
+        "delta": 0.6
+      }
+    ],
+    "soft_base_lap": "07:01.000",
+    "soft_warmup": "-3",
+    "soft_a": "2.4663",
+    "soft_n": "-0.2095",
+    "soft_r2": "1.0000",
+    "soft_test_points": [
+      {
+        "lap": 2,
+        "delta": 1.5
+      },
+      {
+        "lap": 3,
+        "delta": 2.5
+      }
+    ],
+    "stint1_tyre": "soft",
+    "stint2_tyre": "hard",
+    "stint3_tyre": "hard"
+  },
+  "Modelo 2": {
+    "hard_base_lap": "07:02.200",
+    "hard_warmup": "-1.4",
+    "hard_a": "3.2062",
+    "hard_n": "-1.6224",
+    "hard_r2": "1.0000",
+    "hard_test_points": [
+      {
+        "lap": 2,
+        "delta": 0.6
+      },
+      {
+        "lap": 3,
+        "delta": 1.9
+      }
+    ],
+    "soft_base_lap": "07:03.000",
+    "soft_warmup": "-5",
+    "soft_a": "3.6995",
+    "soft_n": "0.9357",
+    "soft_r2": "1.0000",
+    "soft_test_points": [
+      {
+        "lap": 2,
+        "delta": 3.5
+      },
+      {
+        "lap": 3,
+        "delta": 5.0
+      }
+    ],
+    "stint1_tyre": "soft",
+    "stint2_tyre": "hard",
+    "stint3_tyre": "hard"
+  }
+}

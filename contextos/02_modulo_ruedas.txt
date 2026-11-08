@@ -1,0 +1,105 @@
+================================================================================
+CONTEXTO ESPECÍFICO — CONVERSACIÓN PARA EL MÓDULO DE RUEDAS Y TELEMETRÍA FÍSICA
+Calculadora God League — Suite Universal de Estrategia (Team NIX Esports)
+Enfoque: Dinámica de los 4 Neumáticos (LF, RF, LR, RR), Desgaste, Presiones y Sets
+================================================================================
+
+1. OBJETIVO DE ESTA CONVERSACIÓN
+--------------------------------------------------------------------------------
+Esta conversación está dedicada al desarrollo, modelado físico e integración
+del subsistema de RUEDAS (Wheels & Tyre Mechanics) para Team NIX Esports.
+A diferencia del modelado macro de degradación de tiempo por vuelta (Módulo 3),
+esta conversación aborda:
+  1. La física individual de las cuatro ruedas (LF, RF, LR, RR).
+  2. El desgaste porcentual (%) de la banda de rodadura al final de cada stint.
+  3. Las temperaturas en 3 zonas (Exterior, Media, Interior — OMI) para optimizar
+     presiones y caídas (camber).
+  4. La gestión de asignación de juegos de neumáticos (Tyre Allocation Management)
+     limitados por la normativa de iRacing.
+  5. Las tácticas de parada: cambio de 4 ruedas vs 2 ruedas vs no cambiar gomas
+     ("double stinting" en carreras de resistencia o sprints largos).
+
+2. FÍSICA Y TELEMETRÍA DE LAS 4 RUEDAS EN IRACING
+--------------------------------------------------------------------------------
+2.1. DESGASTE ASIMÉTRICO Y CARGA LATERAL
+- En circuitos de simracing, el desgaste nunca es uniforme entre las cuatro esquinas:
+  * Circuitos horarios (ej. Spa, Monza, Watkins Glen): Castigan severamente el
+    neumático Delantero Izquierdo (LF) y Trasero Izquierdo (LR) debido a la mayor
+    presencia de curvas a derechas de alta velocidad.
+  * Circuitos antihorarios (ej. Interlagos, Laguna Seca): Mayor carga en el lado derecho.
+  * Óvalos (IndyCar): Desgaste extremo en la rueda Delantera Derecha (RF).
+- Modelado de Desgaste Residual:
+    Wear_final(esquina, laps) = Wear_inicial - (Tasa_desgaste_base * laps * Factor_estrés)
+  * Si cualquier esquina cae por debajo del 40-35%, se produce un riesgo crítico
+    de "cliff" térmico y pérdida de adherencia exponencial o pinchazo.
+
+2.2. TEMPERATURAS EN TRES ZONAS (O / M / I) Y PRESIONES (HOT PSI)
+- La telemetría de iRacing registra tres bandas térmicas por rueda:
+  * Outer (Exterior)
+  * Middle (Centro)
+  * Inner (Interior)
+- Diagnóstico físico para ingenieros de Team NIX:
+  * Presión correcta: La temperatura central (Middle) debe ser aproximadamente
+    el promedio de Outer e Inner: T_M ≈ (T_O + T_I) / 2.
+    - Si T_M >> Promedio: Neumático sobreinflado (centro abombado).
+    - Si T_M << Promedio: Neumático subinflado (hombros sobrecargados).
+  * Caída (Camber) óptimo: En turismos y monoplazas con camber negativo, la zona
+    interior (Inner) debe estar entre 5°C y 10°C más caliente que la exterior (Outer)
+    en apoyos sostenidos.
+
+2.3. CALENTAMIENTO DE LA GOMA Y PRESIÓN EN CALIENTE
+- Presión en frío (Cold PSI): Configurada en el garage antes de salir a pista.
+- Presión en caliente (Hot PSI): Se estabiliza tras 2 a 4 vueltas de carrera por
+  expansión de la masa de aire/nitrógeno caliente:
+    P_hot = P_cold + ΔP(temperatura_estabilizada)
+- El parámetro "Pérdida por Calentar Rueda" (+0.800s en Prime, +0.400s en Alt)
+  responde directamente a esta fase transitoria en la que P_hot aún no se ha alcanzado.
+
+3. GESTIÓN DE JUEGOS Y ASIGNACIÓN POR REGLAMENTO (TYRE ALLOCATION)
+--------------------------------------------------------------------------------
+- En competiciones oficiales y ligas privadas (ej. God League con Dallara IR-18,
+  IMSA con GT3/GTP):
+  * El reglamento fija un número máximo de juegos nuevos para la sesión
+    (ej. 4 sets de Prime, 3 sets de Alternative).
+  * El compuesto obligatorio (ej. usar al menos un set de cada compuesto en carrera)
+    obliga a realizar como mínimo 1 parada en boxes.
+  * Planificador de Juegos: La suite debe registrar qué sets se usaron en clasificación,
+    cuáles están nuevos (100% vida) y cuáles están "scuffed" (rodados 1-2 vueltas).
+
+4. TÁCTICAS EN BOXES: REPOSTAJE VS CAMBIO DE RUEDAS
+--------------------------------------------------------------------------------
+- Regla de servicio en boxes según categoría:
+  * Repostaje y cambio simultáneo (ej. IMSA GT3/GTP): El tiempo total de servicio es
+    el máximo entre el llenado de combustible y el cambio de neumáticos:
+      t_servicio = max(litros / refuel_rate, tyre_change_time)
+  * "Double-stint" de neumáticos duros:
+    Si el compuesto Prime conserva > 65% de vida y la degradación acumulada es menor
+    que el tiempo que tardan los mecánicos en cambiar las gomas (ej. 4.0s - 12.0s),
+    el ingeniero puede ordenar NO cambiar ruedas, repostar en 6 segundos y salir
+    inmediatamente (ganancia neta de posición por "pitlane time save").
+
+5. RELACIÓN CON OTROS MÓDULOS DE LA APLICACIÓN
+--------------------------------------------------------------------------------
+- Relación con Combustible (Módulo 2):
+  El peso del combustible afecta la tasa de desgaste de las ruedas: un coche con 70L
+  desgasta las gomas hasta un 15% más rápido que con 20L debido al trabajo adicional
+  que realizan los hombros del neumático para contener la masa del vehículo.
+- Relación con Neumáticos (Módulo 3):
+  El modelo logarítmico a * ln(x) + n del Módulo 3 es el resultado directo de la
+  pérdida de grip provocada por el desgaste físico y la saturación térmica de las 4 ruedas.
+- Relación con Live Control (Módulo 5):
+  Al entrar a boxes en iRacing, la telemetría descarga los porcentajes de desgaste
+  reales (LF, RF, LR, RR). El sistema debe leerlos para calibrar la degradación esperada
+  del siguiente stint.
+
+6. ROADMAP DE IMPLEMENTACIÓN FUTURA PARA EL SUBSISTEMA DE RUEDAS
+--------------------------------------------------------------------------------
+- Widget Visual de los 4 Neumáticos (HUD 4-Corners):
+  Panel interactivo en CustomTkinter con la silueta del coche y 4 rectángulos
+  coloreados dinámicamente según desgaste (Verde > 70%, Amarillo 50-70%, Rojo < 50%)
+  y temperaturas O/M/I.
+- Calculadora de Presiones en Frío Objetivo:
+  A partir de la temperatura ambiente de la pista (ej. 35°C), calcular la presión
+  en frío recomendada para que el neumático alcance exactamente la presión caliente
+  óptima de iRacing (ej. 23.5 PSI).
+================================================================================

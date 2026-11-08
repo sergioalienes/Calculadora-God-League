@@ -1,0 +1,115 @@
+================================================================================
+CONTEXTO ESPECÍFICO — CONVERSACIÓN PARA FUNCIONALIDADES Y ROADMAP EVOLUTIVO
+Calculadora God League — Suite Universal de Estrategia (Team NIX Esports)
+Área: Roadmap de Desarrollo, Especificación Técnica de Fases 4 y 5 y Nuevas Features
+================================================================================
+
+1. OBJETIVO DE ESTA CONVERSACIÓN
+--------------------------------------------------------------------------------
+Esta conversación está dedicada a la planificación, especificación funcional y
+diseño técnico de las NUEVAS FUNCIONALIDADES y evoluciones futuras de la Calculadora
+God League para Team NIX Esports.
+Aquí se definen los requerimientos, la experiencia de usuario (UX), los algoritmos
+matemáticos y el cronograma de implementación para las Fases 4, 5 y subsiguientes.
+
+2. ESTADO ACTUAL DE LA APLICACIÓN (MÓDULOS COMPLETADOS AL 100%)
+--------------------------------------------------------------------------------
+- Módulo 1 (Datos del Campeonato y Circuitos — `championship_data.py`):
+  * Soporte universal multi-vehículo (Dallara IR-18, GT3, GTP, LMP2, Super Formula).
+  * Arquitectura jerárquica desacoplada de perfiles en `profiles/<campeonato>/`.
+  * CRUD completo: Creación, guardado, edición y borrado de campeonatos y circuitos.
+- Módulo 2 (Estrategia de Combustible — `fuel_strategy.py`):
+  * Regla White Flag (+1 vuelta) y truncamiento temporal por tiempo de carrera.
+  * Mínimo 1 parada obligatoria forzada por reglamento deportivo de compuestos.
+  * Doble filtro de viabilidad matemática (-20% límite inferior de ahorro de combustible).
+  * Desacoplamiento de sliders interactivos con dummy de protección contra división por cero.
+  * Persistencia independiente `<circuito>_fuel.json`.
+- Módulo 3 (Estrategia de Neumáticos y Telemetría — `tyre_strategy.py`):
+  * Ritmo base de vuelta 1 calibrado a tanque lleno (`fuel_capacity_l`).
+  * Modelo a tramos estricto: x=0 (calentamiento), x=1 (sweet spot delta cero), x>=2 (OLS logarítmico).
+  * Penalización de peso de combustible: Δt_peso(F) = (F - capacidad) * sensibilidad <= 0.000s.
+  * Carrileo horizontal visual para boxes y out-lap.
+  * Restricción dinámica de sliders heredando los límites viables del módulo de combustible.
+  * Persistencia independiente `<circuito>_tyres.json`.
+- Núcleo y Sincronización (`main.py`):
+  * Paleta corporativa NIX Esports (Negro carbón `#0A0A0A`, Naranja NIX `#F26419`).
+  * Persistencia y auto-restauración de la última sesión en `profiles/_last_state.json`.
+
+3. ESPECIFICACIÓN DETALLADA DE LA FASE 4: COMPARADOR DE ESTRATEGIAS
+--------------------------------------------------------------------------------
+- Archivo objetivo: `modules/strategy_charts.py`
+- Objetivo: Proporcionar al ingeniero jefe de Team NIX una vista comparativa global
+  para tomar la decisión definitiva antes de la carrera.
+- Funcionalidades a implementar:
+  1. Comparador Multi-Estrategia Concurrente:
+     - Selector de estrategias:
+       * Estrategia A: 1 Parada (conservadora / fuel saving).
+       * Estrategia B: 2 Paradas (agresiva / sprint push con stints cortos).
+       * Estrategia C: 2 Paradas invertida (compuesto blando al inicio vs al final).
+  2. Simulación Integral Vuelta a Vuelta:
+     - Vectorización con NumPy para calcular en < 15 ms el tiempo acumulado de cada vuelta.
+     - Suma de tiempos de pitlane y repostaje.
+  3. Visualización con Matplotlib:
+     - Gráfico de Tiempos por Vuelta superpuestos.
+     - Gráfico de Delta Acumulado (Gap en pista en segundos respecto a la mejor estrategia).
+     - Marcador visual de puntos de parada e indicación de ventanas de Undercut / Overcut.
+  4. Tabla Resumen / Podium Estratégico:
+     - Clasificación de estrategias ordenadas por tiempo total de carrera.
+     - Indicador de riesgo (Consumo al límite vs margen de combustible).
+  5. Exportación de Informe:
+     - Botón "Exportar PNG / Discord": Genera una imagen optimizada con el resumen
+       de la estrategia lista para enviar al canal del equipo.
+
+4. ESPECIFICACIÓN DETALLADA DE LA FASE 5: LIVE TIMING Y CONTROL EN VIVO
+--------------------------------------------------------------------------------
+- Archivo objetivo: `modules/live_control.py`
+- Objetivo: Asistencia en tiempo real durante la carrera mediante lectura de la telemetría
+  del simulador iRacing.
+- Funcionalidades a implementar:
+  1. Conexión con iRacing SDK (pyirsdk):
+     - Memoria compartida a 4 Hz en un hilo secundario independiente (`threading.Thread`).
+     - Reconexión automática tolerante a fallos si el simulador se reinicia.
+  2. Muro de Telemetría en Directo:
+     - Lectura de combustible en tanque, tasa de consumo y vueltas restantes.
+     - Detección de paso por meta y cálculo de consumo real de la última vuelta.
+  3. Semáforo Dinámico de Consumo (Push vs Save):
+     - Comparación inmediata del consumo real con el target planificado en el Módulo 2.
+     - Avisos visuales y acústicos: 🟢 PUSH | 🟡 ON TARGET | 🔴 LIFT & COAST.
+  4. Recalibración Inteligente ante Safety Car / Caution:
+     - Detección de bandera amarilla: recalcular automáticamente la ventana de parada
+       económica bajo SC ("Cheap Pit Stop").
+  5. Modo Overlay Flotante In-Game:
+     - Miniventana transparente "Always-on-Top" para que el piloto tenga las métricas
+       críticas superpuestas en el simulador sin ocupar toda la pantalla.
+
+5. NUEVAS FUNCIONALIDADES Y ROADMAP A MEDIANO/LARGO PLAZO
+--------------------------------------------------------------------------------
+5.1. METEOROLOGÍA DINÁMICA DE IRACING
+- Parámetros: Temperatura del asfalto (°C), temperatura del aire (°C), viento y adherencia (Track State).
+- Modelo Físico:
+  * A mayor temperatura de pista (> 40°C), mayor degradación térmica en compuestos blandos.
+  * A menor temperatura (< 25°C), mayor penalización por calentar ruedas en la out-lap.
+
+5.2. GESTOR DE JUEGOS DE NEUMÁTICOS (TYRE ALLOCATION)
+- Control de los sets de ruedas asignados por el reglamento (ej. 4 juegos Prime, 3 Alternative).
+- Selector de juego para cada stint:
+  * Indicar si el set es "Nuevo" (100% de vida) o "Rodado / Scuffed" (usado en clasificación).
+  * Descontar automáticamente los juegos utilizados para evitar descalificaciones.
+
+5.3. IMPORTADOR AUTOMÁTICO DE TELEMETRÍA (CSV / IBT / GARAGE61)
+- Botón "Importar Telemetría de Prácticas":
+  * Permite seleccionar un archivo `.csv` exportado de MoTeC i2 Pro o un stint de Garage61.
+  * Extrae automáticamente el ritmo base, el consumo exacto L/v y los puntos de degradación
+    para ajustar los coeficientes OLS sin teclearlos manualmente.
+
+5.4. CALCULADORA DE PRESIONES EN FRÍO ÓPTIMAS
+- A partir de la temperatura ambiente de la pista, calcular la presión en frío (Cold PSI)
+  que el piloto debe colocar en el setup para que tras 3 vueltas alcance exactamente
+  la presión caliente óptima (Hot PSI) de iRacing.
+
+5.5. HOJA DE ESTRATEGIA PARA SPOTTER (SPOTTER CHEAT SHEET)
+- Exportar una hoja resumen en PDF / texto con las llamadas clave del spotter:
+  * Vuelta de parada programada y ventana alternativa (V-1 a V+2).
+  * Consumo objetivo en cada stint.
+  * Litros a cargar en la parada para comunicar por radio.
+================================================================================

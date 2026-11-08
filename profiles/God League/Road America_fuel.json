@@ -1,0 +1,48 @@
+{
+  "fuel_lap": "5.4",
+  "safety_fuel": "0.4",
+  "weight_sens": "0.02",
+  "num_stops": 2,
+  "pit1_lap": 12,
+  "pit2_lap": 24,
+  "fuel_saving_rows": [
+    {
+      "label": "+1 Vuelta Extra",
+      "delta_l": -0.05,
+      "delta_s": 0.01
+    },
+    {
+      "label": "+2 Vueltas Extra",
+      "delta_l": -0.45,
+      "delta_s": 0.4
+    },
+    {
+      "label": "Manual 3",
+      "delta_l": -0.9,
+      "delta_s": 2.0
+    }
+  ],
+  "draft_rows": [
+    {
+      "label": "Rebufo +1 Vuelta Extra",
+      "delta_l": -0.05,
+      "delta_s": 0.01
+    },
+    {
+      "label": "Rebufo +2 Vueltas Extra",
+      "delta_l": -0.45,
+      "delta_s": 0.02
+    },
+    {
+      "label": "Manual 3",
+      "delta_l": -0.5,
+      "delta_s": 0.1
+    },
+    {
+      "label": "Manual 4",
+      "delta_l": -1.0,
+      "delta_s": 2.0
+    }
+  ],
+  "active_model": "Modelo 1"
+}

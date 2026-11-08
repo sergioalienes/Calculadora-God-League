@@ -1,0 +1,117 @@
+================================================================================
+CONTEXTO ESPECÍFICO — CONVERSACIÓN PARA EL MÓDULO DE LIVE TIMING Y TELEMETRÍA
+Calculadora God League — Suite Universal de Estrategia (Team NIX Esports)
+Archivo: modules/live_control.py (Módulo 5 — Telemetría en Vivo y Control de Carrera)
+================================================================================
+
+1. OBJETIVO DE ESTA CONVERSACIÓN
+--------------------------------------------------------------------------------
+Esta conversación está dedicada al diseño, arquitectura de telecomunicaciones,
+procesamiento en tiempo real y UI del MÓDULO 5: CONTROL EN VIVO Y LIVE TIMING (Fase 5).
+Su propósito es convertir la Calculadora God League en un muro de ingenieros
+de pista en tiempo real durante sesiones oficiales y carreras de iRacing para
+Team NIX Esports, contrastando segundo a segundo los datos teóricos de combustible
+y neumáticos con la telemetría viva del coche.
+
+2. ARQUITECTURA Y ESTADO ACTUAL
+--------------------------------------------------------------------------------
+- Ruta del código: `E:\Calculadora God League\modules\live_control.py`
+- Estado: Actualmente es un STUB informativo con placeholder visual.
+- Clase principal a desarrollar: `LiveControlModule(ctk.CTkFrame)`
+- Mecanismo de adquisición de datos en tiempo real:
+  1. SDK Nativo de iRacing (pyirsdk): Comunicación por memoria compartida
+     (Shared Memory) de Windows con el proceso `iRacingSim64.exe` a 1-10 Hz.
+  2. Integración complementaria con Garage61 (API / Webhook / Web Scraping)
+     para telemetría histórica y comparación con compañeros de equipo.
+
+3. ADQUISICIÓN DE DATOS EN TIEMPO REAL (IRACING SDK — PYIRSDK)
+--------------------------------------------------------------------------------
+3.1. VARIABLES CLAVE DE LA MEMORIA COMPARTIDA DE IRACING
+El SDK de iRacing expone variables que se deben mapear en cada tick:
+- Estado de la Sesión:
+  * `SessionState`: Pre-Race, Racing, Checkered, Finished.
+  * `SessionFlags`: Banderas de pista (Green, Caution/Yellow, White, PitClosed).
+  * `SessionTimeRemain`: Segundos restantes en el reloj oficial de carrera.
+  * `SessionLapsRemain`: Vueltas restantes oficiales (en carreras fijadas por vueltas).
+- Coche y Conducción:
+  * `Lap`: Número de vuelta actual del piloto.
+  * `LapCurrentLapTime`: Tiempo transcurrido en la vuelta actual.
+  * `LapLastLapTime`: Tiempo oficial de la última vuelta completada.
+  * `Speed`: Velocidad instantánea (m/s).
+  * `Gear`: Marcha engranada (-1 reversa, 0 neutral, 1-6 adelante).
+- Combustible y Neumáticos:
+  * `FuelLevel`: Litros actuales en el tanque en tiempo real.
+  * `FuelLevelPct`: Porcentaje de combustible restante (0.0 a 1.0).
+  * `FuelUsePerHour`: Tasa instantánea de consumo de combustible.
+  * `OnPitRoad`: Booleano (True cuando el coche está en el carril de boxes).
+  * `PitStopStatus`: Estado de la parada de mecánicos.
+  * `LFwear`, `RFwear`, `LRwear`, `RRwear`: Desgaste porcentual al detenerse en box.
+  * `LFtempCL`, `LFtempCM`, `LFtempCR`: Temperaturas de banda interior, media y exterior.
+
+3.2. MULTITHREADING ROBUSTO PARA EVITAR CONGELAR LA UI
+- El bucle de lectura de `pyirsdk` NUNCA debe correr en el hilo principal de la UI.
+- Arquitectura requerida:
+  * `LiveTelemetryWorker(threading.Thread)`:
+    - Inicializa `ir = irsdk.IRSDK()`.
+    - Polling a 4 Hz (cada 250 ms) mientras `self._running == True`.
+    - Detecta automáticamente si iRacing está abierto (`ir.startup()`).
+    - Si el simulador se cierra o cambia de sesión, pasa a estado `STANDBY` sin crashear.
+  * Cola de eventos segura (`queue.Queue`):
+    - El hilo secundario coloca paquetes de telemetría filtrados en la cola.
+  * Actualización de CustomTkinter:
+    - El widget principal consume la cola mediante `self.after(250, self._process_telemetry_queue)`
+      respetando el ciclo de eventos de Tkinter.
+
+4. ALGORITMOS DE CÁLCULO DINÁMICO EN TIEMPO REAL
+--------------------------------------------------------------------------------
+4.1. CONSUMO REAL POR VUELTA Y DELTA DE COMBUSTIBLE
+- En cada cruce de meta (cuando `Lap` se incrementa):
+    consumo_vuelta_real = fuel_al_inicio_de_vuelta - fuel_al_final_de_vuelta
+    media_consumo_stint = sum(consumos_stint) / len(consumos_stint)
+    delta_consumo = media_consumo_stint - target_consumo_planificado
+- Semáforo para el Piloto en el HUD:
+  * 🟢 PUSH (Verde): Consumo real < Target. Hay margen para apretar o alargar el stint.
+  * 🟡 ON TARGET (Naranja NIX): Consumo real dentro del ±1.5% del plan.
+  * 🔴 LIFT & COAST / SAVE (Rojo): Consumo real excede el target. Alerta inmediata.
+
+4.2. RECALIBRACIÓN EN CALIENTE DE LA VENTANA DE BOXES
+- Si el ritmo promedio del stint ha sido más rápido o más lento que el estimado:
+    vueltas_totales_estimadas = math.floor(SessionTimeRemain / ritmo_medio_real) + 1
+- Si aparece un Caution / Safety Car (Bandera Amarilla):
+  El consumo cae a < 30% del consumo de carrera.
+  El algoritmo detecta la bandera amarilla y muestra instantáneamente:
+  "¡CAUTION DETECTADO! BOX WINDOW OPEN: Parada económica óptima en Vulta X".
+
+4.3. CÁLCULO DE LITROS EXACTOS EN LA VUELTA PREVIA AL BOX
+- 2 vueltas antes de la parada programada:
+    vueltas_hasta_meta = vueltas_totales - vuelta_actual_de_box
+    litros_a_cargar = (vueltas_hasta_meta * consumo_medio_real) + reserva_seguridad - remanente_estimado
+- Enviar comando a iRacing (si está habilitado el autobox de pyirsdk):
+  `ir.set_fuel(litros_a_cargar)` para que el piloto no tenga que tocar la black box.
+
+5. DISEÑO DE LA INTERFAZ DE LIVE TIMING
+--------------------------------------------------------------------------------
+5.1. MODO MONITOR PRINCIPAL (VISTA DE INGENIERO)
+- Tarjeta de Telemetría Superior:
+  * Estado: [🟢 CONECTADO A IRACING]
+  * Vuelta: 14 / 31  |  Tiempo Restante: 32:45  |  Última Vuelta: 01:24.712
+- Indicador Central de Combustible (Gauges / Barras):
+  * Litros en Tanque: 34.2 L  |  Consumo Medio: 5.61 L/v (Target: 5.65 L/v)
+  * Vueltas de Autonomía Restante: 6.1 vueltas
+  * Vuelta de Parada Programada: Vuelta 16 (Ventana: V15 - V17)
+- Panel de 4 Ruedas:
+  * Desgaste estimado o real registrado en la última parada (LF 82% | RF 74% | LR 89% | RR 85%).
+
+5.2. MODO OVERLAY IN-GAME (FLOTANTE PARA PILOTOS)
+- Botón "Modo Overlay": Abre una miniventana sin bordes (`overrideredirect(True)`),
+  siempre visible (`wm_attributes("-topmost", True)`) con fondo negro translúcido
+  para colocar en una esquina de la pantalla o segundo monitor.
+
+6. HOJA DE RUTA PARA IMPLEMENTAR ESTE MÓDULO
+--------------------------------------------------------------------------------
+1. Instalar y verificar `pyirsdk` en el entorno virtual de Python.
+2. Desarrollar la clase `IRacingTelemetryBridge` con reconexión automática tolerante a fallos.
+3. Construir la UI de Live Timing con la paleta de colores de Team NIX Esports.
+4. Implementar el cálculo de cruce de meta y recalibración de combustible vuelta a vuelta.
+5. Desarrollar el modo ventana flotante Overlay.
+================================================================================

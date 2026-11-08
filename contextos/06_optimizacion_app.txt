@@ -1,0 +1,116 @@
+================================================================================
+CONTEXTO ESPECÍFICO — CONVERSACIÓN PARA OPTIMIZACIÓN Y RENDIMIENTO DE LA APP
+Calculadora God League — Suite Universal de Estrategia (Team NIX Esports)
+Área: Rendimiento de UI (CustomTkinter), Matplotlib, Memoria, Vectorización y Concurrencia
+================================================================================
+
+1. OBJETIVO DE ESTA CONVERSACIÓN
+--------------------------------------------------------------------------------
+Esta conversación está dedicada exclusivamente al rendimiento, la latencia de respuesta,
+la optimización del consumo de memoria RAM y CPU, el renderizado gráfico a 60 FPS,
+el desacoplamiento de eventos y la robustez del código de toda la aplicación.
+El objetivo para Team NIX Esports es que la aplicación responda instantáneamente
+(< 16 ms) a cualquier interacción de sliders, navegación o telemetría en vivo,
+incluso en ordenadores portátiles de ingenieros o simuladores con recursos limitados.
+
+2. OPTIMIZACIÓN DEL FRONTEND CUSTOMTKINTER
+--------------------------------------------------------------------------------
+2.1. DESACOPLAMIENTO ESTRICTO ENTRE ESTRUCTURA Y DATOS
+- Regla de oro: NUNCA destruir widgets (`destroy()`) dentro de callbacks de eventos
+  frecuentes (como `_on_slider_moved`, `trace_add` de StringVars o ticks de telemetría).
+- Destruir y recrear widgets genera:
+  * Caídas de frames perceptibles (microstutter).
+  * Pérdida de captura del ratón en mitad del arrastre del slider.
+  * Fugas de memoria interna en los bindings de Tkinter (`<B1-Motion>`, `<ButtonRelease>`).
+- Patrón correcto implementado en el proyecto:
+  * `_build_ui()`: Se ejecuta UNA SOLA VEZ durante la inicialización o cambio de estructura.
+  * `_update_data()`: Solo modifica propiedades livianas (`configure(text=...)`,
+    `set(val)`, `configure(fg_color=...)`).
+
+2.2. PROTECCIÓN DE EVENTOS CIRCULARES EN STRINGVARS
+- Cuando un cambio en un `StringVar` dispara un recálculo que a su vez actualiza
+  otro `StringVar`, puede producirse una cascada infinita de llamadas (`RecursionError`).
+- Solución: Utilizar flags de guarda (`self._updating_vars = True`) antes de modificar
+  StringVars programáticamente, verificando el flag antes de ejecutar el callback.
+
+2.3. SIMPLIFICACIÓN DEL ÁRBOL DE WIDGETS
+- Evitar marcos dentro de marcos innecesarios.
+- Priorizar layouts con `grid()` usando `grid_columnconfigure(col, weight=1)`
+  frente a anidamientos profundos de `pack()`.
+
+3. OPTIMIZACIÓN DE MATPLOTLIB EMBEBIDO EN TKINTER
+--------------------------------------------------------------------------------
+3.1. REUTILIZACIÓN DE FIGURAS Y AXES (EVITAR RECONSTRUIR EL CANVAS)
+- Reconstruir `FigureCanvasTkAgg` cada vez que se mueve un slider o se cambia una vuelta
+  es una operación muy costosa (> 150 ms) que satura el recolector de basura.
+- Patrón de alto rendimiento:
+  * Instanciar `Figure` y `FigureCanvasTkAgg` una sola vez en el constructor `__init__`.
+  * En cada actualización de datos:
+      `self.ax.clear()`
+      (redibujar curvas, barras y áreas)
+      `self.canvas.draw_idle()`  # NO usar draw() forzado síncrono
+- `draw_idle()` solicita a Tkinter que redibuje el canvas en el siguiente ciclo
+  inactivo del bucle de eventos, agrupando múltiples llamadas rápidas en un único render.
+
+3.2. TÉCNICA DE BLITTING PARA ELEMENTOS DINÁMICOS
+- Si en futuras fases se implementa un cursor interactivo o una línea vertical que
+  siga la vuelta del coche en vivo:
+  * Usar blitting (`canvas.copy_from_bbox`, `ax.draw_artist(cursor)`, `canvas.blit(ax.bbox)`).
+  * Reduce el tiempo de dibujo de 40 ms a menos de 2 ms por frame (> 100 FPS).
+
+4. VECTORIZACIÓN MATEMÁTICA CON NUMPY
+--------------------------------------------------------------------------------
+4.1. CÁLCULO DE CARRERAS DE 50-100 VUELTAS EN < 1 MILISEGUNDO
+- Evitar bucles `for lap in range(1, total_laps + 1):` en Python puro cuando se evalúan
+  múltiples estrategias concurrentemente en el Módulo 4.
+- Uso de NumPy vectorizado:
+    laps = np.arange(1, total_laps + 1)
+    # Stint 1
+    x_s1 = laps[laps <= pit_lap]
+    times_s1 = base_pace + np.maximum(0.0, a * np.log(np.maximum(1, x_s1)) + n) + delta_weight_s1
+    # Cálculo total acumulado
+    cum_time = np.cumsum(times_all_stints) + pit_times_accumulated
+- La vectorización permite simular 10.000 combinaciones de paradas de carrera en
+  menos de 50 milisegundos para encontrar la estrategia matemáticamente perfecta.
+
+4.2. REGRESIÓN LINEAL OLS LIGERA
+- En `tyre_strategy.py`, el cálculo de OLS sobre u = ln(x) no debe depender de paquetes
+  pesados como Scipy o Scikit-Learn.
+- Se resuelve con operaciones aritméticas directas sobre arrays de NumPy:
+    cov_ul = np.mean(u * l) - np.mean(u) * np.mean(l)
+    var_u = np.var(u)
+    a = cov_ul / var_u if var_u > 0 else 0.0
+    n = np.mean(l) - a * np.mean(u)
+
+5. GESTIÓN DE MEMORIA Y CICLO DE VIDA DE PROCESOS
+--------------------------------------------------------------------------------
+5.1. PREVENCIÓN DE FUGAS DE MEMORIA (MEMORY LEAKS)
+- Matplotlib mantiene referencias globales a las figuras creadas. Al cerrar o
+  destruir ventanas secundarias, invocar explícitamente `plt.close(fig)`.
+- En CustomTkinter, los componentes que se eliminan (ej. al cambiar de circuito
+  o número de paradas) deben ser desligados con `widget.destroy()`.
+
+5.2. ENTRADA/SALIDA DE ARCHIVOS (PERSISTENCIA ATÓMICA)
+- Para evitar archivos JSON corruptos si el usuario cierra bruscamente la aplicación
+  mientras se escribe en `profiles/`:
+  * Escribir primero en un archivo temporal (`.json.tmp`).
+  * Renombrar atómicamente con `os.replace(tmp_path, final_path)`.
+
+6. CONCURRENCIA PARA TELEMETRÍA (HILOS SEPARADOS)
+--------------------------------------------------------------------------------
+- Para el Módulo 5 (Live Timing):
+  * El hilo secundario de adquisición `threading.Thread(target=self._iracing_worker, daemon=True)`
+    debe aislarse completamente de la GUI.
+  * Ningún método de CustomTkinter o Tkinter debe ser invocado desde un hilo secundario
+    (Tkinter NO es thread-safe en Windows).
+  * Comunicación unidireccional estricta mediante `queue.Queue()`, consumida desde
+    el hilo principal de la GUI con `self.after(ms, callback)`.
+
+7. CHECKLIST DE RENDIMIENTO ANTES DE CADA RELEASE
+--------------------------------------------------------------------------------
+- [ ] Sliders: Respuesta fluida sin parpadeos visuales ni tirones de ratón.
+- [ ] Navegación entre pestañas: Cambio de pantalla instantáneo (< 50 ms).
+- [ ] Gráficos de neumáticos y estrategias: Redibujado suave con `draw_idle()`.
+- [ ] Consumo de RAM: Estable (< 120 MB en reposo, < 180 MB con gráficos abiertos).
+- [ ] Uso de CPU: < 1% cuando no hay interacción o telemetría activa.
+================================================================================

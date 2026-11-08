@@ -1,0 +1,481 @@
+================================================================================
+CALCULADORA GOD LEAGUE — GUÍA MAESTRA DE CONTEXTO, ARQUITECTURA Y TUTORIAL
+Suite Universal de Estrategia de Carrera Multi-Vehículo y Multi-Campeonato
+Ingeniería de Pista: Team NIX Esports (iRacing)
+Archivo de Referencia del Proyecto para Sesiones de Trabajo y Subagentes
+================================================================================
+
+Este documento contiene el contexto integral, la arquitectura matemática, la física
+de modelado, el flujo de datos entre pantallas, el historial de correcciones técnicas
+y la guía de uso de la aplicación "Calculadora God League".
+Está diseñado como tutorial autosuficiente para iniciar nuevas conversaciones de desarrollo
+y subagentes independientes sin pérdida de contexto.
+
+--------------------------------------------------------------------------------
+TABLA DE CONTENIDOS
+--------------------------------------------------------------------------------
+1. OBJETIVO Y FILOSOFÍA UNIVERSAL MULTI-VEHÍCULO (TEAM NIX ESPORTS)
+2. ARQUITECTURA DE PERFILES POR CAMPEONATO Y VEHÍCULO
+3. DETALLE DE MÓDULOS Y FUNCIONALIDADES
+   3.1. Módulo 1: Datos del Campeonato y Circuitos (championship_data.py)
+   3.2. Módulo 2: Estrategia de Combustible (fuel_strategy.py)
+   3.3. Módulo 3: Estrategia de Neumáticos y Telemetría (tyre_strategy.py)
+   3.4. Módulos 4 y 5: Gráficos Comparativos y Control en Vivo
+   3.5. Núcleo de la Aplicación y Sincronización (main.py)
+4. FÍSICA Y MODELADO MATEMÁTICO PARAMÉTRICO
+   4.1. Algoritmo Iterativo de Combustible y Truncamiento White Flag
+   4.2. Doble Filtro de Viabilidad de Paradas y Límite de Ahorro (-20%)
+   4.3. Mecánica de Boxes y "Gasolina Gratis"
+   4.4. Modelo de Neumáticos a Tramos Estricto (x=0, x=1, x>=2)
+   4.5. Regresión OLS Logarítmica para Maximizar R²
+   4.6. Delta de Peso de Combustible Paramétrico (Base a Tanque Lleno)
+5. HISTORIAL DE PROBLEMAS CORREGIDOS Y DECISIONES TÉCNICAS
+6. TUTORIAL DE OPERACIÓN PASO A PASO (INDYCAR, GT3, GTP, ETC.)
+7. CONVENCIONES DE CÓDIGO Y PAUTAS PARA FUTUROS DESARROLLOS
+
+================================================================================
+1. OBJETIVO Y FILOSOFÍA UNIVERSAL MULTI-VEHÍCULO (TEAM NIX ESPORTS)
+================================================================================
+"Calculadora God League" nació originalmente para optimizar la estrategia del equipo
+Team NIX Esports en campeonatos de monoplazas (Dallara IR-18 en la God League), pero
+ha evolucionado hacia una SUITE UNIVERSAL DE ESTRATEGIA DE CARRERA para cualquier coche
+y campeonato de simracing en iRacing:
+
+- Monoplazas: Dallara IR-18 (IndyCar), Super Formula SF23, Formula 1 (Mercedes W13), F3, etc.
+- Turismos y Gran Turismo: Categorías GT3 (Ferrari 296, Porsche 992 GT3 R, BMW M4, etc.), GT4.
+- Prototipos y Resistencia: Hypercars / GTP (Porsche 963, Cadillac V-Series.R, Acura, BMW),
+  LMP2 (Dallara P217), LMP3.
+- Copas Monomarca y Turismos: Porsche Cup, TCR, etc.
+
+Cada competición y categoría tiene sus propias variables de homologación y reglamento:
+- Capacidad máxima del depósito de combustible (ej. 70L en Dallara IR-18, 105L en Ferrari 296 GT3,
+  110L en Porsche 963 GTP, 93L en LMP2).
+- Tasa de flujo de repostaje (L/s) y duración del cambio de neumáticos (s).
+- Repostaje simultáneo vs secuencial.
+- Duración de la carrera (ej. sprints de 20 min, carreras estándar de 60 min, resistencia de 120+ min).
+- Normativa de neumáticos: Compuestos obligatorios (ej. Prime/Alternative) con parada obligatoria,
+  o compuesto único con paradas tácticas.
+
+La aplicación está diseñada para ser 100% paramétrica: NINGÚN valor físico o reglamentario
+está grabado a fuego ("hardcoded"). Todo se gestiona mediante perfiles independientes por campeonato.
+
+================================================================================
+2. ARQUITECTURA DE PERFILES POR CAMPEONATO Y VEHÍCULO
+================================================================================
+El almacenamiento de datos está desacoplado en una jerarquía de dos niveles dentro de
+la carpeta `profiles/` en la raíz del proyecto (`E:\Calculadora God League\profiles\`):
+
+E:\Calculadora God League\
+├── main.py                     # Núcleo, navegación, branding NIX y auto-restauración
+├── contexto.txt                # Este documento maestro de contexto y tutorial
+├── images\
+│   └── Logo_nix_transparent.png# Logo oficial transparente de Team NIX Esports
+├── modules\
+│   ├── championship_data.py    # Módulo 1: Gestión de Campeonatos y Circuitos
+│   ├── fuel_strategy.py        # Módulo 2: Algoritmo de Combustible y Stints
+│   ├── tyre_strategy.py        # Módulo 3: Modelo Logarítmico de Gomas y Gráficos
+│   ├── strategy_charts.py      # Módulo 4: Comparador gráfico de estrategias
+│   └── live_control.py         # Módulo 5: Telemetría y control en vivo
+└── profiles\
+    ├── _last_state.json        # Guarda el último campeonato, circuito y pantalla activa
+    ├── God League\             # Campeonato 1 (ej. Dallara IR-18, 70L, compuestos obligatorios)
+    │   ├── _campeonato.json    # Constantes del campeonato y vehículo
+    │   ├── Bélgica.json        # Variables del circuito (Spa)
+    │   ├── Bélgica_fuel.json   # Estrategia guardada de combustible para Spa
+    │   ├── Bélgica_tyres.json  # Modelo y telemetría de neumáticos para Spa
+    │   └── Road America.json   # Otro circuito del mismo campeonato
+    ├── IMSA Esports Series\    # Campeonato 2 (ej. Ferrari 296 GT3, 105L, 45 min)
+    │   ├── _campeonato.json
+    │   └── Daytona.json
+    └── European Endurance\     # Campeonato 3 (ej. Porsche 963 GTP, 110L, 120 min)
+        ├── _campeonato.json
+        └── Le Mans.json
+
+Cada campeonato encapsula:
+1. `_campeonato.json`:
+   - `name`: Nombre del campeonato.
+   - `car`: Nombre del vehículo (ej. "Dallara IR-18", "Porsche 992 GT3 R", "Cadillac GTP").
+   - `fuel_capacity_l`: Capacidad máxima real del tanque para esa homologación.
+   - `refuel_rate_ls`: Velocidad de llenado en litros por segundo.
+   - `tyre_change_s`: Tiempo de cambio de gomas de los mecánicos.
+   - `race_duration_min`: Duración de la prueba en minutos.
+   - `tyre_compounds`: Lista con los nombres de los compuestos utilizados.
+   - `mandatory_compound_change`: Booleano (True si el reglamento obliga a cambiar de compuesto).
+
+2. `<circuito>.json`:
+   - `circuit`: Nombre del trazado.
+   - `lap_time`: Tiempo medio de vuelta estándar (MM:SS.mmm).
+   - `pitlane_loss_s`: Pérdida de tiempo al recorrer el pitlane (s).
+   - `track_length_km`: Longitud del trazado (km).
+   - `sc_speed_kmh`: Velocidad reglamentaria del Safety Car (km/h) y ritmo resultante.
+
+3. `<circuito>_fuel.json`:
+   - Consumo base por vuelta (L/v), reserva de seguridad (L), sensibilidad al peso (s/L),
+     paradas configuradas y tablas dinámicas de ahorro y rebufo.
+
+4. `<circuito>_tyres.json`:
+   - Ritmo base a tanque lleno por compuesto, pérdida por calentar rueda (warmup),
+     coeficientes a y n de degradación logarítmica, R² y tabla de vueltas de test.
+
+5. `_last_state.json`:
+   - Guarda el último módulo activo, el campeonato activo y el circuito activo para
+     restaurar la sesión completa al reabrir la app.
+
+================================================================================
+3. DETALLE DE MÓDULOS Y FUNCIONALIDADES
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1. Módulo 1: Datos del Campeonato y Circuitos (championship_data.py)
+--------------------------------------------------------------------------------
+Permite al equipo NIX gestionar cualquier campeonato y coche:
+- Paso 1 (Campeonato):
+  * Selector desplegable de campeonatos existentes.
+  * Botón "+ Nuevo": Abre formulario inline para registrar cualquier coche y reglamento.
+  * Botón "✏️ Editar": Modifica constantes existentes.
+  * Botón "🗑️ Borrar": Solicita confirmación y elimina permanentemente la carpeta
+    completa del campeonato y todos sus circuitos/estrategias con `shutil.rmtree`.
+- Paso 2 (Circuito):
+  * Selector subordinado al campeonato activo.
+  * Botones "+ Nuevo", "✏️ Editar" y "🗑️ Borrar" (elimina `<circuito>.json`,
+    `<circuito>_fuel.json` y `<circuito>_tyres.json` en cascada).
+- Botón "✔ Guardar Sesión":
+  * Consolida todos los datos en `session_data` y los expone mediante `get_session_data()`
+    para alimentar instantáneamente a Combustible y Neumáticos.
+
+--------------------------------------------------------------------------------
+3.2. Módulo 2: Estrategia de Combustible (fuel_strategy.py)
+--------------------------------------------------------------------------------
+Calcula analíticamente la estrategia de combustible para el coche y circuito activos:
+- Inputs de Telemetría:
+  * Consumo base por vuelta (L/v).
+  * Margen de seguridad (Litros).
+  * Sensibilidad al peso (s/L).
+- Desglose Iterativo en 8 Pasos:
+  1. Vueltas brutas.
+  2. Combustible bruto inicial.
+  3. Paradas mínimas requeridas: Si el reglamento del campeonato exige cambio de
+     compuesto, se fuerza automáticamente a mínimo 1 parada (`1 mín. (reglamento)`).
+  4. Pérdida real en boxes.
+  5. Tiempo efectivo de carrera en pista (Duración total - Boxes).
+  6. Vueltas corregidas.
+  7. Vueltas truncadas según la regla White Flag de iRacing (+1 vuelta).
+  8. Ganancia total por efecto peso al vaciarse el depósito.
+- Gasolina Gratis:
+  * Calcula cuántos litros se pueden repostar a 0.0s de tiempo adicional mientras
+    los mecánicos cambian neumáticos: `Litros_gratis = Tiempo_ruedas × Ratio_repostaje`.
+- Selector de Estrategias Viables:
+  * Botón segmentado dinámico que SOLO ofrece las paradas matemáticamente alcanzables
+    dentro del límite de ahorro máximo del 20% y el límite de over-stopping (+10%).
+  * Excluye "0 Paradas" si el reglamento deportivo exige cambio de compuesto.
+- Sliders Interactivos y Cards de Stints:
+  * Sliders de parada acotados estrictamente a las vueltas donde el stint es viable.
+  * Indicadores dinámicos por stint: "🟢 PUSH (Ritmo Normal)" o "🟡 LIFT & COAST (Ahorro)".
+- Tablas Dinámicas:
+  * Tablas de Fuel Saving y Rebufo auto-pobladas para +1, +2 y +3 vueltas de autonomía.
+- Botones de Cabecera:
+  * "💾 Guardar", "🔄 Recargar" y "🗑️ Borrar".
+
+--------------------------------------------------------------------------------
+3.3. Módulo 3: Estrategia de Neumáticos y Telemetría (tyre_strategy.py)
+--------------------------------------------------------------------------------
+Simula el ritmo de carrera vuelta a vuelta y grafica la telemetría en Matplotlib:
+- Ritmo Base a Tanque Lleno:
+  * Configurable independientemente para el compuesto Duro y Blando. Se toma siempre
+    con el coche a tanque lleno de la homologación activa (`tank_capacity`).
+- Pérdida por Calentar Rueda (Warmup):
+  * Penalización en segundos para gomas frías (out-lap o salida de parrilla).
+- Tabla de Test y Regresión Logarítmica OLS:
+  * Introducción de deltas empíricos observados en vueltas de test.
+  * Ajuste de `a` y `n` sobre `u = ln(x)` para x >= 2 con maximización de R².
+- Selector de Paradas Sincronizado con Combustible:
+  * El selector de paradas adopta dinámicamente las estrategias viables calculadas
+    por el Módulo de Combustible. Si en una pista con alto consumo 1 parada es imposible,
+    el módulo de neumáticos SOLO permitirá seleccionar 2 paradas.
+- Sliders Acotados al Rango Viable:
+  * Sliders de parada restringidos a las vueltas donde el ahorro de gasolina es <= 20%.
+- Asignación de Compuestos por Stint:
+  * Selectores segmentados para cada stint (Dura / Blanda).
+  * Alerta reglamentaria de verificación de uso de ambos compuestos.
+- Gráfico Matplotlib Interactivo:
+  * Eje X: Número de vuelta (1 a N).
+  * Eje Y: Tiempo de vuelta en formato MM:SS.mmm.
+  * Curva continua de ritmo en pista sin saltos artificiales entre stints.
+  * Relleno de área semitransparente: Blanco para Dura, Rojo para Blanda.
+  * Líneas verticales discontinuas con anotación en las vueltas de salida de box (BOX 1, BOX 2)
+    indicando el tiempo total de parada y los litros repostados.
+  * Métricas superiores: Tiempo total de carrera (HH:MM:SS), tiempo neto en pista,
+    tiempo perdido en boxes y pérdida por degradación/calentamiento.
+- Botones de Cabecera:
+  * "💾 Guardar", "🔄 Recargar" y "🗑️ Borrar".
+
+--------------------------------------------------------------------------------
+3.4. Módulos 4 y 5: Gráficos Comparativos y Control en Vivo
+--------------------------------------------------------------------------------
+- strategy_charts.py: Comparativa gráfica simultánea de estrategias alternativas
+  (undercut vs overcut, diferentes secuencias de compuestos).
+- live_control.py: Panel preparado para telemetría en tiempo real mediante pyirsdk,
+  monitorizando vueltas restantes, consumo real y ritmo en carrera.
+
+--------------------------------------------------------------------------------
+3.5. Núcleo de la Aplicación y Sincronización (main.py)
+--------------------------------------------------------------------------------
+- Sidebar lateral con branding NIX Esports y footer dinámico que muestra el coche
+  activo y la capacidad del depósito (`Ferrari 296 GT3 | 105L` o `Dallara IR-18 | 70L`).
+- Marca de agua con el logo NIX semitransparente (7% de opacidad) centrada dinámicamente.
+- Sincronización Total de Sesión en `navigate_to()`:
+  * Antes de cambiar a cualquier módulo, actualiza el Módulo de Combustible con los datos
+    de sesión del campeonato y circuito activos.
+  * Transmite los resultados de viabilidad de paradas calculados por combustible al
+    módulo de neumáticos.
+- Auto-Persistencia y Restauración (`profiles/_last_state.json`):
+  * Guarda automáticamente el último módulo, campeonato y circuito al cerrar la app
+    o cambiar de pantalla.
+  * Al abrir la app, recupera inmediatamente toda la sesión y abre la última pantalla activa.
+
+================================================================================
+4. FÍSICA Y MODELADO MATEMÁTICO PARAMÉTRICO
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1. Algoritmo Iterativo de Combustible y Truncamiento White Flag
+--------------------------------------------------------------------------------
+En iRacing, las carreras finalizan al cruzar la meta tras expirar el tiempo reglamentario:
+
+1. Vueltas brutas teóricas:
+   V_brutas = Duracion_carrera_s / Tiempo_vuelta_s
+
+2. Combustible bruto:
+   F_bruto = (V_brutas × Consumo_lap) + Reserva_seguridad_l
+
+3. Paradas mínimas:
+   Litros_utilizables = Capacidad_tanque - Reserva_seguridad
+   F_paradas = ceil(max(0, F_bruto - Capacidad_tanque) / Litros_utilizables)
+   Paradas_minimas = max(1, F_paradas)   <-- Mínimo 1 si el reglamento exige cambio de gomas.
+
+4. Pérdida en boxes:
+   Para cada parada k:
+     Litros_a_cargar = Combustible_necesario / Paradas_minimas
+     T_repostaje = Litros_a_cargar / Ratio_repostaje
+     T_box = max(T_repostaje, Tiempo_ruedas)
+     T_perdida_total = Paradas_minimas × (Pitlane_loss + T_box)
+
+5. Tiempo efectivo en pista y Vueltas corregidas:
+   T_pista = max(0, Duracion_carrera - T_perdida_total)
+   V_corregidas = T_pista / Tiempo_vuelta
+
+6. Vueltas truncadas base (White Flag):
+   Vueltas_totales = floor(V_corregidas) + 1
+
+--------------------------------------------------------------------------------
+4.2. Doble Filtro de Viabilidad de Paradas y Límite de Ahorro (-20%)
+--------------------------------------------------------------------------------
+Para cualquier vehículo y circuito:
+
+1. Autonomía máxima con ahorro (Lift & Coast máximo del 20%):
+   Consumo_min = 0.80 × Consumo_base
+   Vueltas_max_stint_20 = floor((Capacidad_tanque - Reserva) / Consumo_min)
+
+   Paradas mínimas con ahorro (k_save):
+   k_save = max(1, ceil(Vueltas_totales / Vueltas_max_stint_20) - 1)
+
+2. Autonomía a ritmo normal (sin ahorro):
+   Vueltas_max_base = floor((Capacidad_tanque - Reserva) / Consumo_base)
+   k_base = max(1, ceil(Vueltas_totales / Vueltas_max_base) - 1)
+
+3. Todas las opciones entre k_save y k_base son viables por definición.
+4. Parada extra al sprint (k_sprint = k_base + 1):
+   Se evalúa con el filtro de over-stopping (+10% del consumo base en stints principales).
+5. Las opciones resultantes se transfieren al selector de paradas de neumáticos.
+
+--------------------------------------------------------------------------------
+4.3. Mecánica de Boxes y "Gasolina Gratis"
+--------------------------------------------------------------------------------
+- Tiempo_estacionario = max(Litros / Ratio_repostaje, Tiempo_ruedas).
+- Si Litros <= Tiempo_ruedas × Ratio_repostaje:
+  El tiempo de repostaje es absorbido por el cambio de neumáticos.
+  Esa cantidad es "Gasolina Gratis" (0.0s de pérdida adicional).
+
+--------------------------------------------------------------------------------
+4.4. Modelo de Neumáticos a Tramos Estricto (x=0, x=1, x>=2)
+--------------------------------------------------------------------------------
+Función a tramos estricta indexada por la vida de la goma (x):
+
+1. Ritmo Base (Tanque Lleno):
+   Tiempo de vuelta del coche con gomas nuevas a tanque lleno (`tank_capacity`).
+
+2. Tramo x = 0 (Vuelta 1 / Salida de boxes con gomas frías):
+   Tiempo = Ritmo_Base + Perdida_Calentar_Rueda + Delta_Peso(Combustible)
+   * Penalización térmica configurable por compuesto (+0.4s a +1.2s).
+
+3. Tramo x = 1 (Vuelta 2 / Gomas a temperatura óptima):
+   Tiempo = Ritmo_Base + Delta_Peso(Combustible)
+   * Degradación forzada a cero (Delta_deg = 0.000s). Caída nítida respecto a x=0.
+
+4. Tramo x >= 2 (Vuelta 3+ / Degradación logarítmica):
+   Tiempo = Ritmo_Base + max(0.0, a · ln(x) + n) + Delta_Peso(Combustible)
+   * Curva logarítmica OLS que modela el desgaste acumulado.
+
+--------------------------------------------------------------------------------
+4.5. Regresión OLS Logarítmica para Maximizar R²
+--------------------------------------------------------------------------------
+Para calibrar a y n a partir de los datos empíricos de telemetría introducidos:
+1. Se filtran puntos con x >= 2.
+2. Transformación: u = ln(x).
+3. Ecuación lineal: y = a · u + n.
+4. OLS mediante `numpy.polyfit(u, y, 1)` para maximizar R².
+5. Indicador R² con código de colores (Verde >= 0.90, Naranja 0.70-0.89, Rojo < 0.70).
+
+--------------------------------------------------------------------------------
+4.6. Delta de Peso de Combustible Paramétrico (Base a Tanque Lleno)
+--------------------------------------------------------------------------------
+El Ritmo Base se define con TANQUE LLENO de la homologación del vehículo (`tank_capacity`):
+  Delta_peso(Litros_actuales) = (Litros_actuales - Capacidad_tanque) × Sensibilidad_peso
+
+Propiedades físicas universales:
+- Con tanque lleno (F = Capacidad_tanque):
+  Delta_peso = 0.000s exactos en cualquier coche (sin penalizaciones fantasma).
+- Al quemarse combustible en pista (F < Capacidad_tanque):
+  Delta_peso <= 0.
+  El monoplaza/coche se aligera progresivamente y gana tiempo por vuelta.
+- En paradas en boxes:
+  La in-lap se rueda con poco combustible (coche muy ágil).
+  En la out-lap tras el repostaje, el combustible vuelve a subir, incrementando
+  la masa y ajustando el tiempo de forma realista.
+
+================================================================================
+5. HISTORIAL DE PROBLEMAS CORREGIDOS Y DECISIONES TÉCNICAS
+================================================================================
+Para evitar regresiones en futuras conversaciones y subagentes:
+
+1. Soporte Multi-Vehículo y Multi-Campeonato:
+   - Problema original: El software asumía constantes fijas del Dallara IR-18 (70L).
+   - Corrección: Parametrización completa a nivel de campeonato. El depósito, ratios,
+     tiempos de parada, compuestos y masa base son leídos dinámicamente de `_campeonato.json`.
+
+2. Corrección de la Vuelta 1 Plana en Neumáticos:
+   - Problema: Las vueltas 1 y 2 aparecían con el mismo tiempo horizontal en el gráfico.
+   - Causa: `get_tyre_pace` devolvía `base_lap + warmup` para x=0 y x=1.
+   - Corrección: Separación estricta a tramos:
+     * x=0: base + warmup (pico térmico).
+     * x=1: base (caída a ritmo óptimo, delta cero).
+     * x>=2: base + a·ln(x) + n (degradación logarítmica).
+
+3. Tiempos Inflados por Masa de Combustible:
+   - Problema: La vuelta 1 salía artificialmente +1.5s más lenta que el ritmo base.
+   - Causa: Se calculaba el delta relativo a la reserva de seguridad en lugar de a tanque lleno.
+   - Corrección: `Delta_peso = (Litros_actuales - Capacidad_tanque) × Sensibilidad`.
+     A tanque lleno el delta es 0.000s.
+
+4. Parada Obligatoria por Reglamento Deportivo:
+   - Problema: Con bajo consumo el algoritmo ofrecía "0 Paradas".
+   - Corrección: El reglamento de compuestos obliga a usar ambos compuestos y realizar
+     al menos 1 parada. Se acota `k_save = max(1, ...)` y `k_base = max(1, ...)`, excluyendo
+     "0 Paradas" de las estrategias viables.
+
+5. Sincronización de Paradas Viables entre Combustible y Neumáticos:
+   - Problema: En circuitos con alto consumo (ej. Bélgica a 5.65 L/v donde 1 parada es
+     físicamente inviable: 15v + 15v = 30v < 31v), neumáticos seguía mostrando "1 Parada".
+   - Corrección: `fuel_strategy.py` exporta `viable_modes`, y `tyre_strategy.py` adopta
+     dinámicamente las únicas opciones viables. En Bélgica solo ofrece "2 Paradas".
+
+6. Continuidad Visual en Paradas de Boxes:
+   - Problema: El gráfico se cortaba o quebraba de forma discontinua entre stints.
+   - Corrección: In-lap completa en pista, parada al final de la vuelta, out-lap con
+     calentamiento y líneas continuas de conexión entre stints.
+
+7. Pérdida de Estado al Cerrar la Aplicación:
+   - Problema: Cada reinicio obligaba a reconfigurar campeonato y circuito.
+   - Corrección: Guardado automático en `profiles/_last_state.json` y restauración
+     inmediata de campeonato, circuito y pantalla activa al iniciar.
+
+8. Gestión Integral CRUD (Crear, Editar, Recargar y Borrar):
+   - Adición de botones "🗑️ Borrar" para campeonato (con borrado recursivo de carpeta)
+     y circuito (borrado de .json, _fuel.json y _tyres.json).
+   - Adición de botones "🔄 Recargar" y "🗑️ Borrar" en combustible y neumáticos.
+
+================================================================================
+6. TUTORIAL DE OPERACIÓN PASO A PASO (INDYCAR, GT3, GTP, ETC.)
+================================================================================
+
+EJEMPLO A: Configurar un Campeonato de Dallara IR-18 (God League)
+----------------------------------------------------------------
+1. Abre la app y ve a "🏁 Datos del Campeonato".
+2. Pulsa "+ Nuevo" en Campeonato:
+   - Nombre: "God League 2024"
+   - Coche: "Dallara IR-18"
+   - Capacidad: 70 L
+   - Repostaje: 12.0 L/s
+   - Ruedas: 4.0 s
+   - Duración: 60 min
+   - Compuesto 1: "Prime (Duro)", Compuesto 2: "Alternative (Blando)"
+   - Pulsa "💾 Guardar Campeonato".
+3. En Circuito, pulsa "+ Nuevo":
+   - Nombre: "Watkins Glen Boot"
+   - Tiempo de vuelta: "01:24.500"
+   - Pitlane loss: 22.5 s, Longitud: 5.47 km, SC: 72.0 km/h.
+   - Pulsa "💾 Guardar Circuito".
+4. Pulsa "✔ Guardar Sesión".
+
+EJEMPLO B: Configurar un Campeonato de GT3 (Ferrari 296 GT3 / Porsche GT3)
+-------------------------------------------------------------------------
+1. En "🏁 Datos del Campeonato", pulsa "+ Nuevo" en Campeonato:
+   - Nombre: "IMSA GT3 Series"
+   - Coche: "Ferrari 296 GT3"
+   - Capacidad: 105 L (o la homologada por BoP)
+   - Repostaje: 2.8 L/s (típico GT3 iRacing)
+   - Ruedas: 18.0 s (secuencial o simultáneo según reglamento)
+   - Duración: 45 min
+   - Compuestos: "Seco (Dry)", "Lluvia (Wet)"
+   - Pulsa "💾 Guardar Campeonato".
+2. En Circuito, pulsa "+ Nuevo":
+   - Nombre: "Daytona International Road Course"
+   - Tiempo de vuelta: "01:46.000", Pitlane: 30.0 s.
+   - Pulsa "💾 Guardar Circuito" y luego "✔ Guardar Sesión".
+
+OPERACIÓN DE ESTRATEGIA (Válida para cualquier coche):
+------------------------------------------------------
+1. Entra en "⛽ Estrategia Combustible":
+   - Ajusta consumo base por vuelta (ej. 3.20 L/v en GT3 o 2.15 L/v en IR-18).
+   - Revisa la autonomía máxima y las estrategias viables.
+   - Selecciona el modo de paradas y ajusta los sliders. Pulsa "💾 Guardar".
+2. Entra en "🔄 Estrategia Neumáticos":
+   - Confirma el Ritmo Base a tanque lleno y la pérdida por calentamiento (warmup).
+   - Introduce puntos de test de desgaste y pulsa "⚡ Ajustar Modelo (OLS)".
+   - Comprueba la alerta de reglamento y analiza el gráfico de telemetría vuelta a vuelta.
+   - Pulsa "💾 Guardar".
+3. Al cerrar la aplicación, todo queda registrado y se auto-cargará en el siguiente inicio.
+
+================================================================================
+7. CONVENCIONES DE CÓDIGO Y PAUTAS PARA FUTUROS DESARROLLOS
+================================================================================
+Al trabajar en este proyecto en nuevas sesiones o con subagentes:
+
+1. Principio de Universalidad Paramétrica:
+   - NUNCA codificar números fijos de capacidad de tanque (como 70) en las fórmulas;
+     usar siempre `float(self.session_data.get("fuel_capacity_l", 70.0))`.
+   - NUNCA codificar nombres de compuestos fijos; usar los declarados en `session_data`.
+
+2. Integridad Física:
+   - Mantener siempre la función a tramos estricta: x=0 (warmup), x=1 (delta cero),
+     x>=2 (degradación logarítmica OLS).
+   - Mantener el delta de peso respecto a tanque lleno: `(Litros - Capacidad_tanque) × sens`.
+   - Mantener la regla White Flag (+1 vuelta en vueltas truncadas).
+
+3. Comunicación y Flujo de Datos:
+   - `main.py` debe orquestar la sincronización entre módulos pasando `session_data`
+     y `get_fuel_strategy_data()`.
+   - Todo nuevo parámetro de carrera debe añadirse a `session_data` en `championship_data.py`.
+
+4. Estilo de UI:
+   - Modo oscuro CustomTkinter con paleta NIX Esports: Fondo `#0A0A0A`, Cards `#131313`,
+     Acento NIX `#F26419`, Bordes `#222222`, Acierto `#51CF66`, Alerta `#FF453A`.
+   - Tipografía: Segoe UI para texto y Segoe UI Mono para datos numéricos y tiempos.
+
+5. Verificación Continua:
+   - Al finalizar cualquier modificación, ejecutar un script headless en Python para
+     validar importaciones, cálculos matemáticos y persistencia sin errores.
+
+================================================================================
+FIN DEL DOCUMENTO DE CONTEXTO MAESTRO — TEAM NIX ESPORTS
+================================================================================
