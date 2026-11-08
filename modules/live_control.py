@@ -2365,6 +2365,16 @@ class LiveControlModule(ctk.CTkFrame):
     # ─── Métodos de Enlace con el Orquestador main.py ──────────────────
     def on_session_data_updated(self, session_data: dict):
         self.session_data = session_data or {}
+        # Mientras se aplica la sesión y se carga el JSON del circuito NO se autoguarda:
+        # si no, el estado en memoria (por defecto o del circuito anterior) pisaría el
+        # <circuito>_live.json antes de leerlo.
+        self._suspend_autosave = getattr(self, "_suspend_autosave", 0) + 1
+        try:
+            self._apply_session_and_load()
+        finally:
+            self._suspend_autosave -= 1
+
+    def _apply_session_and_load(self):
         # Sincronizar parámetros de cabecera del líder
         self.race_header.update_session_params(self.session_data)
         if not self.saved_strategies:
@@ -2411,6 +2421,7 @@ class LiveControlModule(ctk.CTkFrame):
         path = self._get_live_profile_path()
         if not path:
             return
+        self._loaded_live_path = path
         state = {
             "race_header": self.race_header.get_race_state(),
             "pilots": [p.to_dict() for p in self.pilots],
@@ -2422,30 +2433,44 @@ class LiveControlModule(ctk.CTkFrame):
             print(f"[save_live_session] Error: {e}")
 
     def auto_save(self):
-        """Guardado silencioso sin alertas visuales."""
+        """Guardado silencioso sin alertas visuales.
+
+        Solo escribe si el estado en memoria corresponde al circuito activo (ya se cargó
+        su JSON o se guardó explícitamente) y no se está aplicando una sesión/carga."""
+        if getattr(self, "_suspend_autosave", 0):
+            return
+        path = self._get_live_profile_path()
+        if not path or path != getattr(self, "_loaded_live_path", None):
+            return
         self.save_live_session()
 
     def load_live_session(self):
         path = self._get_live_profile_path()
-        if not path or not path.exists():
+        if not path:
             return
+        self._suspend_autosave = getattr(self, "_suspend_autosave", 0) + 1
         try:
-            state = json.loads(path.read_text(encoding="utf-8"))
-            if "race_header" in state:
-                self.race_header.set_race_state(state["race_header"])
-            if "pilots" in state and len(state["pilots"]) == 3:
-                for i, p_data in enumerate(state["pilots"]):
-                    self.pilots[i].from_dict(p_data)
-        except Exception as e:
-            print(f"[load_live_session] Error: {e}")
+            if not path.exists():
+                # Circuito sin sesión en vivo guardada: no heredar los cruces por meta
+                # del circuito anterior.
+                self._clear_live_records()
+            else:
+                try:
+                    state = json.loads(path.read_text(encoding="utf-8"))
+                    if "race_header" in state:
+                        self.race_header.set_race_state(state["race_header"])
+                    if "pilots" in state and len(state["pilots"]) == 3:
+                        for i, p_data in enumerate(state["pilots"]):
+                            self.pilots[i].from_dict(p_data)
+                except Exception as e:
+                    print(f"[load_live_session] Error: {e}")
+                    return  # no marcar como cargado: evita sobrescribir un JSON ilegible
+            self._loaded_live_path = path
+        finally:
+            self._suspend_autosave -= 1
 
-    def reset_all_data(self):
-        confirm = messagebox.askyesno(
-            "Resetear Sesión en Vivo",
-            "¿Deseas reiniciar todas las tablas y cruces por meta de los 3 pilotos?",
-        )
-        if not confirm:
-            return
+    def _clear_live_records(self):
+        """Vuelve a vuelta 0 del líder y vacía los cruces por meta de los 3 pilotos (sin guardar)."""
         self.race_header._var_leader_lap.set("0")
         self.race_header._on_params_changed()
         for p in self.pilots:
@@ -2454,4 +2479,17 @@ class LiveControlModule(ctk.CTkFrame):
             p._var_quick_fuel.set("")
             p._render_table_rows()
             p._recalculate_all()
+
+    def reset_all_data(self):
+        confirm = messagebox.askyesno(
+            "Resetear Sesión en Vivo",
+            "¿Deseas reiniciar todas las tablas y cruces por meta de los 3 pilotos?",
+        )
+        if not confirm:
+            return
+        self._suspend_autosave = getattr(self, "_suspend_autosave", 0) + 1
+        try:
+            self._clear_live_records()
+        finally:
+            self._suspend_autosave -= 1
         self.save_live_session()

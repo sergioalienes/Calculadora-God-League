@@ -40,6 +40,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.ticker import FuncFormatter
 
 from modules.ui_responsive import ResponsiveGrid, WidthModes, ZoomAwareFigureCanvas, widget_scaling
+from modules.race_physics import saving_curve_from_rows, interpolate_saving_penalty, stint_saving
 
 # Suprimir advertencias de glifos no disponibles en fuentes de matplotlib (ej. DejaVu Sans)
 warnings.filterwarnings("ignore", message=r".*missing from font.*")
@@ -313,24 +314,8 @@ class StrategyChartsModule(ctk.CTkFrame):
                     except Exception:
                         pass
 
-        pts = [(0.0, 0.0)]
-        for r in rows:
-            try:
-                dl = abs(float(r.get("delta_l", r.get("saving_l", r.get("fuel_l", 0.0)))))
-                ds = abs(float(r.get("delta_s", r.get("penalty_s", r.get("time_s", 0.0)))))
-                if dl > 1e-4:
-                    pts.append((dl, ds))
-            except Exception:
-                continue
-
-        pts.sort(key=lambda p: p[0])
-
-        if len(pts) <= 1:
-            cons_base = self._get_base_consumption()
-            # Fallback analítico estándar: ~0.35s por 10% ahorro, ~0.80s por 20% ahorro
-            pts = [(0.0, 0.0), (cons_base * 0.10, 0.35), (cons_base * 0.20, 0.80)]
-
-        return pts
+        # Fallback analítico estándar: ~0.35s por 10% ahorro, ~0.80s por 20% ahorro
+        return saving_curve_from_rows(rows, self._get_base_consumption(), fallback=(0.35, 0.80))
 
     def _get_draft_saving_curve(self) -> list[tuple[float, float]]:
         """
@@ -358,44 +343,16 @@ class StrategyChartsModule(ctk.CTkFrame):
                     except Exception:
                         pass
 
-        pts = [(0.0, 0.0)]
-        for r in rows:
-            try:
-                dl = abs(float(r.get("delta_l", r.get("saving_l", r.get("fuel_l", 0.0)))))
-                # delta_s conserva su signo (puede ser ganancia de tiempo negativa o leve pérdida positiva)
-                ds = float(r.get("delta_s", r.get("penalty_s", r.get("time_s", 0.0))))
-                if dl > 1e-4:
-                    pts.append((dl, ds))
-            except Exception:
-                continue
-
-        pts.sort(key=lambda p: p[0])
-
-        if len(pts) <= 1:
-            cons_base = self._get_base_consumption()
-            # Fallback analítico estándar rebufo: ~-0.05s por 10% ahorro, ~-0.10s por 20% ahorro
-            pts = [(0.0, 0.0), (cons_base * 0.10, -0.05), (cons_base * 0.20, -0.10)]
-
-        return pts
+        # delta_s conserva su signo (puede ser ganancia de tiempo negativa o leve pérdida positiva).
+        # Fallback analítico estándar rebufo: ~-0.05s por 10% ahorro, ~-0.10s por 20% ahorro
+        return saving_curve_from_rows(rows, self._get_base_consumption(), signed=True, fallback=(-0.05, -0.10))
 
     def _interpolate_saving_penalty(self, save_per_l: float, pts: list[tuple[float, float]]) -> float:
         """
         Interpola en tiempo real la pérdida/ganancia de tiempo por vuelta (s)
         para un ahorro objetivo de save_per_l (L/v), correlacionando con la tabla de combustible.
         """
-        if save_per_l <= 0.0001:
-            return 0.0
-
-        xs = [p[0] for p in pts]
-        ys = [p[1] for p in pts]
-
-        if save_per_l <= xs[-1]:
-            return float(np.interp(save_per_l, xs, ys))
-        else:
-            dx = xs[-1] - xs[-2] if len(xs) >= 2 else xs[-1]
-            dy = ys[-1] - ys[-2] if len(ys) >= 2 else ys[-1]
-            slope = dy / max(0.001, dx)
-            return float(ys[-1] + slope * (save_per_l - xs[-1]))
+        return interpolate_saving_penalty(save_per_l, pts)
 
     def _get_draft_saving_l(self) -> float:
         """
@@ -1750,6 +1707,7 @@ class StrategyChartsModule(ctk.CTkFrame):
 
             # 6. Cálculo previo de necesidad de combustible y penalización por ahorro (Lift & Coast y Rebufo)
             stint_saving_penalties = []
+            stint_feasible = []  # False si el stint exige ahorrar más del 20% (se quedaría sin gasolina)
 
             for _, start_v, end_v, _ in stints_def:
                 n_racing_laps = max(0.0, sum(1.0 - sc_fractions.get(v, 0.0) for v in range(start_v, end_v + 1)))
@@ -1759,22 +1717,15 @@ class StrategyChartsModule(ctk.CTkFrame):
                 fuel_needed_racing = n_racing_laps * cons_base
                 f_needed_base = fuel_sc + fuel_needed_racing
 
-                excess = max(0.0, f_needed_base - usable_tank)
+                # Ahorro uniforme por vuelta de carrera necesario para que el stint quepa en el
+                # depósito útil (máx. 20%); feasible=False si ni con ese ahorro se llega.
+                save_needed, target_cons, ok = stint_saving(n_racing_laps, f_needed_base, usable_tank, cons_base)
+                stint_feasible.append(ok)
 
-                if excess <= 1e-4:
-                    # Sin déficit de combustible en el tanque:
-                    # El stint cabe con holgura a ritmo base, no se exige ahorro artificial
-                    save_needed = 0.0
-                    target_cons = cons_base
+                if save_needed <= 0.0:
                     t_pen_draft = 0.0
                     t_pen_green = 0.0
                 else:
-                    # Hay déficit de combustible en el stint:
-                    # Se calcula el consumo necesario uniforme por vuelta de carrera del stint
-                    save_needed = excess / max(0.1, n_racing_laps)
-                    save_needed = min(save_needed, 0.20 * cons_base)
-                    target_cons = max(0.1, cons_base - save_needed)
-
                     # Se interpola la pérdida de tiempo según la tabla correspondiente:
                     # 1. En vueltas con rebufo: de la tabla de rebufo (draft_rows)
                     t_pen_draft = self._interpolate_saving_penalty(save_needed, draft_curve)
@@ -1951,6 +1902,8 @@ class StrategyChartsModule(ctk.CTkFrame):
                     "is_last_stint": (s_idx == len(stints_def) - 1),
                 })
 
+            for st_info, ok in zip(stint_targets, stint_feasible):
+                st_info["feasible"] = ok
             return stints_def, stint_targets, lap_times, lap_start_fuel, lap_weight_deltas, fuel_remaining, lap_fuel_consumed, curr_fuel, pit_info, total_pit_time, p1_eff, p2_eff, pit_laps
 
         # Pasada 1: con estimación preliminar de vueltas
@@ -2039,6 +1992,9 @@ class StrategyChartsModule(ctk.CTkFrame):
             "stint_targets": stint_targets,
             "p1": p1_eff,
             "p2": p2_eff if num_stops == 2 else 0,
+            # Viable solo si ningún stint exige ahorrar más del 20% (si no, el coche se queda sin gasolina)
+            "feasible": all(st.get("feasible", True) for st in stint_targets),
+            "infeasible_stints": [st["stint_num"] for st in stint_targets if not st.get("feasible", True)],
         }
 
     # ═══════════════════════════════════════════════════════════
@@ -2113,6 +2069,8 @@ class StrategyChartsModule(ctk.CTkFrame):
                         draft_enabled=df_en,
                         draft_segments=df_segs,
                     )
+                    if not res.get("feasible", True):
+                        continue
                     score = (-res["total_laps"], res["total_race_time"])
                     if score < best_score:
                         best_score = score
@@ -2170,6 +2128,8 @@ class StrategyChartsModule(ctk.CTkFrame):
                             draft_enabled=df_en,
                             draft_segments=df_segs,
                         )
+                        if not res.get("feasible", True):
+                            continue
                         score = (-res["total_laps"], res["total_race_time"])
                         if score < best_score:
                             best_score = score
@@ -2412,6 +2372,8 @@ class StrategyChartsModule(ctk.CTkFrame):
                     draft_enabled=df_en,
                     draft_segments=df_segs,
                 )
+                if not res1.get("feasible", True):
+                    continue
                 score1 = (-res1["total_laps"], res1["total_race_time"])
                 if score1 < best_score:
                     best_score = score1
@@ -2616,7 +2578,12 @@ class StrategyChartsModule(ctk.CTkFrame):
         else:
             self._lbl_kpi_box_time.configure(text=f"{tot_box_s:.1f}s", text_color=self.colors["accent"])
 
-        self._lbl_kpi_final_fuel.configure(text=f"{f_fuel:.2f} L")
+        if res.get("feasible", True):
+            self._lbl_kpi_final_fuel.configure(text=f"{f_fuel:.2f} L", text_color=self.colors["accent"])
+        else:
+            bad = ", ".join(str(n) for n in res.get("infeasible_stints", []))
+            self._lbl_kpi_final_fuel.configure(
+                text=f"⚠️ SIN GASOLINA (stint {bad}: ahorro > 20%)", text_color=self.colors["danger"])
 
         if self.optimal_result:
             opt_time = self.optimal_result["total_race_time"]

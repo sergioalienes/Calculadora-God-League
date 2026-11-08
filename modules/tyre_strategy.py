@@ -56,6 +56,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.ticker as ticker
 
+from modules.race_physics import saving_curve_from_rows, interpolate_saving_penalty, stint_saving
 from modules.ui_responsive import (
     HeaderLayout, ResponsiveGrid, WidthModes, ZoomAwareFigureCanvas, bind_wraplength, widget_scaling,
 )
@@ -1114,10 +1115,31 @@ class TyreStrategyModule(ctk.CTkFrame):
                 text_color="#FFA94D"
             )
 
+        # ── AHORRO DE COMBUSTIBLE POR STINT (Lift & Coast) ─────
+        # Mismo modelo que Gráficos de Estrategia (modules/race_physics.py): si el stint no
+        # cabe en el depósito útil a consumo base, se ahorra uniformemente (máx. 20%) y cada
+        # vuelta lanzada (x >= 1) paga la penalización de la tabla de Fuel Saving.
+        usable_tank = max(1.0, tank_cap - safety_fuel)
+        saving_curve = saving_curve_from_rows(self.fuel_data.get("fuel_saving_rows") or [], cons_lap,
+                                              fallback=(0.35, 0.80))
+        if num_stops == 1:
+            stint_lengths = [p1, total_laps - p1]
+        else:
+            stint_lengths = [p1, max(1, p2 - p1), max(1, total_laps - p2)]
+        stint_cons = []
+        stint_pen = []
+        for n_st in stint_lengths:
+            save_l, tgt_cons, _ok = stint_saving(n_st, n_st * cons_lap, usable_tank, cons_lap)
+            stint_cons.append(tgt_cons)
+            stint_pen.append(interpolate_saving_penalty(save_l, saving_curve) if save_l > 0.0 else 0.0)
+        while len(stint_cons) < 3:
+            stint_cons.append(cons_lap)
+            stint_pen.append(0.0)
+
         # ── CÁLCULO FÍSICO DE COMBUSTIBLE EN PARADAS ───────────
         # Parada 1
         laps1 = p1
-        fuel_in_box1 = max(0.0, tank_cap - (laps1 * cons_lap))
+        fuel_in_box1 = max(0.0, tank_cap - (laps1 * stint_cons[0]))
         if num_stops == 1:
             laps2 = total_laps - p1
             fuel_needed2 = (laps2 * cons_lap) + safety_fuel
@@ -1138,7 +1160,7 @@ class TyreStrategyModule(ctk.CTkFrame):
             fuel_start_stint2 = fuel_in_box1 + fuel_load1
 
             # Parada 2
-            fuel_in_box2 = max(0.0, fuel_start_stint2 - (laps2 * cons_lap))
+            fuel_in_box2 = max(0.0, fuel_start_stint2 - (laps2 * stint_cons[1]))
             laps3 = max(1, total_laps - p2)
             fuel_needed3 = (laps3 * cons_lap) + safety_fuel
             fuel_load2 = min(tank_cap - fuel_in_box2, max(0.0, fuel_needed3 - fuel_in_box2))
@@ -1161,7 +1183,8 @@ class TyreStrategyModule(ctk.CTkFrame):
                 comp = st1_comp
                 stint_lap = lap
                 tyre_age = stint_lap - 1  # lap=1 (x=0), lap=2 (x=1), lap=3 (x=2)
-                fuel_current = max(safety_fuel, tank_cap - (stint_lap - 1) * cons_lap)
+                fuel_current = max(safety_fuel, tank_cap - (stint_lap - 1) * stint_cons[0])
+                saving_pen = stint_pen[0]
                 is_pit = False
                 pit_time_this_lap = 0.0
             elif num_stops == 1 or lap <= p2:
@@ -1169,7 +1192,8 @@ class TyreStrategyModule(ctk.CTkFrame):
                 comp = st2_comp
                 stint_lap = lap - p1
                 tyre_age = stint_lap - 1  # stint_lap=1 (x=0), stint_lap=2 (x=1), stint_lap=3 (x=2)
-                fuel_current = max(safety_fuel, fuel_start_stint2 - (stint_lap - 1) * cons_lap)
+                fuel_current = max(safety_fuel, fuel_start_stint2 - (stint_lap - 1) * stint_cons[1])
+                saving_pen = stint_pen[1]
                 is_pit = (stint_lap == 1)
                 pit_time_this_lap = total_pit_loss1 if is_pit else 0.0
             else:
@@ -1177,7 +1201,8 @@ class TyreStrategyModule(ctk.CTkFrame):
                 comp = st3_comp
                 stint_lap = lap - p2
                 tyre_age = stint_lap - 1  # stint_lap=1 (x=0), stint_lap=2 (x=1), stint_lap=3 (x=2)
-                fuel_current = max(safety_fuel, fuel_start_stint3 - (stint_lap - 1) * cons_lap)
+                fuel_current = max(safety_fuel, fuel_start_stint3 - (stint_lap - 1) * stint_cons[2])
+                saving_pen = stint_pen[2]
                 is_pit = (stint_lap == 1 and num_stops == 2)
                 pit_time_this_lap = total_pit_loss2 if is_pit else 0.0
 
@@ -1188,7 +1213,8 @@ class TyreStrategyModule(ctk.CTkFrame):
             #    Al quemar combustible, el coche se aligera (delta negativo = más rápido).
             weight_delta = (fuel_current - tank_cap) * weight_sens
 
-            track_time = tyre_pace + weight_delta
+            # 3. Penalización por Lift & Coast (la out-lap con gomas frías, x=0, no la paga)
+            track_time = tyre_pace + weight_delta + (saving_pen if tyre_age >= 1 else 0.0)
             lap_total = track_time + pit_time_this_lap
 
             on_track_times.append(track_time)

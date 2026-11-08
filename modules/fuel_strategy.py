@@ -38,6 +38,9 @@ from tkinter import messagebox
 from modules.ui_responsive import HeaderLayout, ResponsiveGrid, WidthModes, bind_wraplength
 from modules.ui_responsive import widget_scaling as _s
 
+# Número máximo de paradas que modelan todos los módulos (neumáticos, estrategias, live)
+MAX_SUPPORTED_STOPS = 2
+
 APP_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
 PROFILES_ROOT = APP_ROOT / "profiles"
 
@@ -216,7 +219,10 @@ class FuelStrategyModule(ctk.CTkFrame):
         # 3. Desglose del Algoritmo Iterativo
         self._build_iterative_breakdown()
 
-        # 4. Tablas dinámicas (Fuel Saving y Rebufo)
+        # 4. Selector de paradas viables, sliders de stint y tarjetas por parada
+        self._build_stints_section()
+
+        # 5. Tablas dinámicas (Fuel Saving y Rebufo)
         self._build_dynamic_tables_section()
 
         ctk.CTkFrame(self._scroll, height=30, fg_color="transparent").pack()
@@ -415,12 +421,13 @@ class FuelStrategyModule(ctk.CTkFrame):
         header = ctk.CTkFrame(self._stints_card, fg_color="transparent")
         header.pack(fill="x", padx=20, pady=(16, 6))
 
-        ctk.CTkLabel(
+        stints_title = ctk.CTkLabel(
             header,
             text="🏁  Control de Paradas y Targets de Consumo",
             font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
             text_color=self.colors["accent"],
-        ).pack(side="left")
+        )
+        stints_title.pack(side="left")
 
         # Selector de estrategias viables
         selector_frame = ctk.CTkFrame(header, fg_color="transparent")
@@ -446,6 +453,23 @@ class FuelStrategyModule(ctk.CTkFrame):
         )
         self._seg_stops.set("1 Parada")
         self._seg_stops.pack(side="left")
+
+        # Responsive: el selector de paradas pasa bajo el título si no caben en una fila
+        def _stints_hdr_mode(width):
+            need = stints_title.winfo_reqwidth() + selector_frame.winfo_reqwidth() + 24 * _s(header)
+            return "wide" if width >= need else "narrow"
+
+        def _apply_stints_hdr(mode):
+            stints_title.pack_forget()
+            selector_frame.pack_forget()
+            if mode == "wide":
+                stints_title.pack(side="left")
+                selector_frame.pack(side="right")
+            else:
+                stints_title.pack(side="top", anchor="w")
+                selector_frame.pack(side="top", anchor="w", pady=(8, 0))
+
+        self._stints_hdr_modes = WidthModes(header, _stints_hdr_mode, _apply_stints_hdr)
 
         # Subtítulo resumen
         self._stint_subtitle_lbl = ctk.CTkLabel(
@@ -493,6 +517,8 @@ class FuelStrategyModule(ctk.CTkFrame):
             anchor="w",
         )
         self._lbl_free_fuel_desc.grid(row=0, column=1, padx=(0, 14), pady=7, sticky="w")
+        # Responsive: la explicación salta de línea en ventanas estrechas (descontando la insignia)
+        bind_wraplength(self._lbl_free_fuel_desc, self._free_fuel_card, margin=330)
 
         # Contenedor dinámico de los stints y paradas
         self._stints_container = ctk.CTkFrame(self._stints_card, fg_color="transparent")
@@ -876,8 +902,15 @@ class FuelStrategyModule(ctk.CTkFrame):
 
         # Filtrar forzando estrictamente k >= 1 (normativa de cambio de gomas obligatorio)
         viable_k = sorted(list(set([k for k in viable_k if k >= 1])))
+        # Neumáticos, Gráficos de Estrategia y Control en Vivo solo modelan 1 o 2 paradas:
+        # no ofrecer modos de 3+ paradas que ningún módulo puede simular correctamente.
+        min_viable = min(viable_k) if viable_k else 1
+        self._unsupported_min_stops = min_viable if min_viable > MAX_SUPPORTED_STOPS else 0
+        viable_k = [k for k in viable_k if k <= MAX_SUPPORTED_STOPS]
         if not viable_k:
-            viable_k = [1]
+            # Ninguna opción soportada es viable: se muestra la de más paradas soportadas
+            # y el banner avisa de que la carrera exige más paradas de las que se modelan.
+            viable_k = [MAX_SUPPORTED_STOPS] if self._unsupported_min_stops else [1]
         format_name = lambda k: f"{k} Parada{'s' if k > 1 else ''}"
         return [format_name(k) for k in viable_k]
 
@@ -1053,8 +1086,14 @@ class FuelStrategyModule(ctk.CTkFrame):
         l_max_20   = res.get("max_laps_per_stint_20", 39)
 
         viable_str = ", ".join(self._available_stops_modes)
+        subtitle = f"Total: {total_laps} Vueltas  ·  Combustible: {final_fuel:.1f} L  ·  Estrategias Viables: [{viable_str}]"
+        unsupported = getattr(self, "_unsupported_min_stops", 0)
+        if unsupported:
+            subtitle += (f"\n⚠️  Esta carrera exige al menos {unsupported} paradas y la calculadora solo modela "
+                         f"hasta {MAX_SUPPORTED_STOPS}: el plan mostrado NO llega a meta sin ahorro extremo.")
         self._stint_subtitle_lbl.configure(
-            text=f"Total: {total_laps} Vueltas  ·  Combustible: {final_fuel:.1f} L  ·  Estrategias Viables: [{viable_str}]"
+            text=subtitle,
+            text_color=self.colors["danger"] if unsupported else self.colors["text_primary"],
         )
 
         # Si el modo renderizado ha cambiado, reconstruir el esqueleto de la sección
@@ -1352,10 +1391,14 @@ class FuelStrategyModule(ctk.CTkFrame):
         self._pit_summary.pack(fill="x", pady=(10, 0))
         self._pit_summary.grid_columnconfigure((0, 1), weight=1)
 
-        self._lbl_2pit1_info = ctk.CTkLabel(self._pit_summary, text="", font=ctk.CTkFont(family="Segoe UI Mono", size=11, weight="bold"), text_color="#FFA94D")
-        self._lbl_2pit1_info.grid(row=0, column=0, padx=12, pady=8, sticky="w")
-        self._lbl_2pit2_info = ctk.CTkLabel(self._pit_summary, text="", font=ctk.CTkFont(family="Segoe UI Mono", size=11, weight="bold"), text_color="#FFA94D")
-        self._lbl_2pit2_info.grid(row=0, column=1, padx=12, pady=8, sticky="w")
+        self._lbl_2pit1_info = ctk.CTkLabel(self._pit_summary, text="", font=ctk.CTkFont(family="Segoe UI Mono", size=11, weight="bold"), text_color="#FFA94D", justify="left")
+        self._lbl_2pit2_info = ctk.CTkLabel(self._pit_summary, text="", font=ctk.CTkFont(family="Segoe UI Mono", size=11, weight="bold"), text_color="#FFA94D", justify="left")
+        # Responsive: las dos paradas lado a lado o una debajo de otra si no caben
+        self._pit_summary_grid = ResponsiveGrid(self._pit_summary, [self._lbl_2pit1_info, self._lbl_2pit2_info],
+                                                max_cols=2, min_col_width=440,
+                                                grid_kw=dict(padx=12, pady=8, sticky="w"))
+        for _lbl in (self._lbl_2pit1_info, self._lbl_2pit2_info):
+            bind_wraplength(_lbl, self._pit_summary, margin=40)
 
     def _on_p1_2stops_event(self, val: float):
         p1 = int(round(val))
@@ -1691,6 +1734,12 @@ class FuelStrategyModule(ctk.CTkFrame):
         p1 = self._var_pit1_lap.get()
         p2 = self._var_pit2_lap.get()
         res = self.calc_results
+        # Exportar siempre vueltas de parada dentro de la carrera (1 <= p1 < p2 < total)
+        total = int(res.get("truncated_laps", 0) or 0)
+        if total >= 2:
+            p1 = max(1, min(total - 1, int(p1)))
+        if total >= 3:
+            p2 = max(p1 + 1, min(total - 1, int(p2)))
         return {
             "num_stops": num_stops,
             "pit1_lap": p1,
