@@ -910,12 +910,23 @@ class TyreStrategyModule(ctk.CTkFrame):
         self._plot_frame.pack(fill="x", padx=20, pady=(0, 16))
 
         self._fig = Figure(figsize=(9, 4.4), dpi=100, facecolor="#0E0E0E")
+        # Motor "tight" en la figura: el ajuste de márgenes se ejecuta una sola vez por
+        # render (también al redimensionar la ventana) en lugar de en cada recálculo.
+        self._fig.set_layout_engine("tight")
         self._ax = self._fig.add_subplot(111)
         self._ax.set_facecolor("#141414")
 
         self._mpl_canvas = FigureCanvasTkAgg(self._fig, master=self._plot_frame)
         self._mpl_canvas.draw()
         self._mpl_canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+        # Si el gráfico se recalcula con el módulo oculto, se pinta al volver a mostrarse
+        self._plot_pending_draw = False
+        self._mpl_canvas.get_tk_widget().bind("<Map>", self._on_plot_mapped, add="+")
+
+    def _on_plot_mapped(self, _event=None):
+        if self._plot_pending_draw and self._mpl_canvas:
+            self._plot_pending_draw = False
+            self._mpl_canvas.draw_idle()
 
     # ═══════════════════════════════════════════════════════════
     #  CÁLCULO DE LA CARRERA Y RENDERIZADO DEL GRÁFICO
@@ -1253,9 +1264,14 @@ class TyreStrategyModule(ctk.CTkFrame):
 
         self._ax.legend(facecolor="#181818", edgecolor="#333333", labelcolor="#FFFFFF", fontsize=8.5, loc="upper left")
 
-        self._fig.tight_layout()
+        # tight_layout lo aplica el motor de la figura al renderizar (ver _build_chart_section)
         if self._mpl_canvas:
-            self._mpl_canvas.draw_idle()
+            if self._mpl_canvas.get_tk_widget().winfo_ismapped():
+                self._mpl_canvas.draw_idle()
+            else:
+                # Módulo oculto (p. ej. sincronización al navegar a otra pantalla):
+                # no renderizar ahora; se pintará en el evento <Map>.
+                self._plot_pending_draw = True
 
     # ═══════════════════════════════════════════════════════════
     #  PERSISTENCIA DE MODELOS POR CIRCUITO (MODELOS DE NEUMÁTICOS)
