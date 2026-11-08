@@ -42,6 +42,7 @@ import json
 import re
 import sys
 from pathlib import Path
+import tkinter as tk
 from tkinter import messagebox
 
 import matplotlib
@@ -920,8 +921,10 @@ class TyreStrategyModule(ctk.CTkFrame):
         self._mpl_canvas.draw()
         self._mpl_canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
         # Si el gráfico se recalcula con el módulo oculto, se pinta al volver a mostrarse
+        # (main.py oculta/muestra el módulo completo con grid_remove()/grid(): el <Map>
+        # llega al frame del módulo, no al canvas, por eso se enlaza con tkinter.Misc.bind)
         self._plot_pending_draw = False
-        self._mpl_canvas.get_tk_widget().bind("<Map>", self._on_plot_mapped, add="+")
+        tk.Misc.bind(self, "<Map>", self._on_plot_mapped, "+")
 
     def _on_plot_mapped(self, _event=None):
         if self._plot_pending_draw and self._mpl_canvas:
@@ -1266,7 +1269,8 @@ class TyreStrategyModule(ctk.CTkFrame):
 
         # tight_layout lo aplica el motor de la figura al renderizar (ver _build_chart_section)
         if self._mpl_canvas:
-            if self._mpl_canvas.get_tk_widget().winfo_ismapped():
+            if self.winfo_viewable():
+                self._plot_pending_draw = False
                 self._mpl_canvas.draw_idle()
             else:
                 # Módulo oculto (p. ej. sincronización al navegar a otra pantalla):
