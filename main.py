@@ -98,6 +98,10 @@ class CalculadoraApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self._active_module = "championship"
+        # Aplicar el zoom guardado ANTES de crear los widgets: así cada widget nace ya
+        # con su escala final y se evita re-renderizar toda la interfaz al arrancar.
+        self._initial_zoom = self._read_initial_zoom()
+        self._apply_zoom(self._initial_zoom, save=False)
         self._configure_window()
         self._build_layout()
         self._register_modules()
@@ -300,10 +304,30 @@ class CalculadoraApp(ctk.CTk):
         }
 
     # ─── Persistencia de Estado de Sesión y Zoom ────────────
+    _ZOOM_FACTORS = {"85%": 0.85, "100%": 1.0, "115%": 1.15}
+
+    def _read_initial_zoom(self) -> str:
+        """Zoom guardado en _last_state.json o, si no existe, detectado según la pantalla."""
+        try:
+            if STATE_FILE.exists():
+                saved = json.loads(STATE_FILE.read_text(encoding="utf-8")).get("ui_zoom")
+                if saved in self._ZOOM_FACTORS:
+                    return saved
+        except Exception:
+            pass
+        # Sin zoom guardado: en monitores grandes (>= 820 alto y > 1366 ancho) -> 100%,
+        # en pantallas pequeñas o portátiles reducidos -> 85%
+        try:
+            sw = self.winfo_screenwidth()
+            sh = self.winfo_screenheight()
+            return "85%" if (sh < 820 or sw <= 1366) else "100%"
+        except Exception:
+            return "100%"
+
     def _apply_zoom(self, zoom_val: str, save: bool = True):
         """Aplica la escala global de CustomTkinter de forma reactiva."""
-        scale_map = {"85%": 0.85, "100%": 1.0, "115%": 1.15}
-        factor = scale_map.get(zoom_val, 1.0)
+        factor = self._ZOOM_FACTORS.get(zoom_val, 1.0)
+        self._current_zoom_factor = factor
         try:
             ctk.set_widget_scaling(factor)
         except Exception as e:
@@ -312,6 +336,9 @@ class CalculadoraApp(ctk.CTk):
             self.save_app_state()
 
     def _on_zoom_changed(self, zoom_val: str):
+        # Re-escalar toda la interfaz es costoso: no hacerlo si el zoom no cambia
+        if self._ZOOM_FACTORS.get(zoom_val, 1.0) == getattr(self, "_current_zoom_factor", None):
+            return
         self._apply_zoom(zoom_val, save=True)
 
     def save_app_state(self):
@@ -334,14 +361,12 @@ class CalculadoraApp(ctk.CTk):
     def _restore_last_state(self):
         """Restaura el campeonato, circuito, pantalla activa y nivel de zoom de la última sesión."""
         target_module = "championship"
-        saved_zoom = None
         if STATE_FILE.exists():
             try:
                 state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
                 champ_name = state.get("championship")
                 circuit_name = state.get("circuit")
                 last_mod = state.get("last_module", "championship")
-                saved_zoom = state.get("ui_zoom")
 
                 champ_mod = self._modules.get("championship")
                 if champ_mod and champ_name:
@@ -352,23 +377,11 @@ class CalculadoraApp(ctk.CTk):
             except Exception as e:
                 print(f"[_restore_last_state] Error: {e}")
 
-        # Si no había zoom guardado, detectar inteligentemente:
-        # En monitores grandes (>= 820 alto y > 1366 ancho) -> 100%
-        # En pantallas pequeñas o portátiles reducidos -> 85%
-        if not saved_zoom:
-            try:
-                sw = self.winfo_screenwidth()
-                sh = self.winfo_screenheight()
-                if sh < 820 or sw <= 1366:
-                    saved_zoom = "85%"
-                else:
-                    saved_zoom = "100%"
-            except Exception:
-                saved_zoom = "100%"
-
+        # El zoom ya se aplicó en __init__ antes de construir los widgets
+        # (ver _read_initial_zoom); aquí solo se refleja en el selector.
+        saved_zoom = getattr(self, "_initial_zoom", "100%")
         if hasattr(self, "_seg_zoom"):
             self._seg_zoom.set(saved_zoom)
-        self._apply_zoom(saved_zoom, save=False)
 
         self.navigate_to(target_module)
 
