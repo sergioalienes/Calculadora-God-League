@@ -32,7 +32,11 @@ import json
 import re
 import sys
 from pathlib import Path
+import tkinter as tk
 from tkinter import messagebox
+
+from modules.ui_responsive import HeaderLayout, ResponsiveGrid, WidthModes, bind_wraplength
+from modules.ui_responsive import widget_scaling as _s
 
 APP_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
 PROFILES_ROOT = APP_ROOT / "profiles"
@@ -101,26 +105,27 @@ class FuelStrategyModule(ctk.CTkFrame):
         header.grid(row=0, column=0, sticky="ew")
         header.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkFrame(header, width=4, height=44, fg_color=self.colors["accent"]).grid(
-            row=0, column=0, sticky="nsw", padx=(0, 16)
-        )
+        accent_bar = ctk.CTkFrame(header, width=4, height=44, fg_color=self.colors["accent"])
+        accent_bar.grid(row=0, column=0, sticky="nsw", padx=(0, 16))
 
         title_box = ctk.CTkFrame(header, fg_color="transparent")
         title_box.grid(row=0, column=1, sticky="w", pady=10)
 
-        ctk.CTkLabel(
+        title_lbl = ctk.CTkLabel(
             title_box,
             text="ESTRATEGIA DE COMBUSTIBLE",
             font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
             text_color=self.colors["text_primary"],
-        ).pack(anchor="w")
+        )
+        title_lbl.pack(anchor="w")
 
-        ctk.CTkLabel(
+        subtitle_lbl = ctk.CTkLabel(
             title_box,
             text="Control dinámico de paradas, targets de consumo L/v y límite estricto de tanque (70L)",
             font=ctk.CTkFont(family="Segoe UI", size=12),
             text_color=self.colors["text_secondary"],
-        ).pack(anchor="w")
+        )
+        subtitle_lbl.pack(anchor="w")
 
         # Botones de Acción y Selector de Modelo de Combustible
         btn_box = ctk.CTkFrame(header, fg_color="transparent")
@@ -189,6 +194,9 @@ class FuelStrategyModule(ctk.CTkFrame):
         )
         self._btn_delete_profile.pack(side="left")
 
+        # Responsive: botonera bajo el título y subtítulo con salto de línea si no caben
+        self._header_layout = HeaderLayout(header, accent_bar, title_lbl, subtitle_lbl, btn_box)
+
     def _build_scroll(self):
         self._scroll = ctk.CTkScrollableFrame(
             self,
@@ -231,8 +239,11 @@ class FuelStrategyModule(ctk.CTkFrame):
             font=ctk.CTkFont(family="Segoe UI", size=12),
             text_color=self.colors["text_secondary"],
             anchor="w",
+            justify="left",
         )
         self._banner_label.pack(fill="x", padx=16, pady=12)
+        # Texto largo: salto de línea al ancho del banner en lugar de cortarse
+        bind_wraplength(self._banner_label, self._banner_frame, margin=36)
 
     # ─── 2. Inputs de Telemetría ──────────────────────────────
     def _build_inputs_section(self):
@@ -295,6 +306,22 @@ class FuelStrategyModule(ctk.CTkFrame):
         )
         btn_calc.grid(row=1, column=3, sticky="ew", padx=14, pady=(16, 16))
 
+        # Responsive: 4 columnas (3 parámetros + botón) o 2x2 en ventanas estrechas.
+        # El botón conserva su margen superior para alinearse con las cajas de texto.
+        def _inputs_mode(width):
+            return "wide" if width >= max(f.winfo_reqwidth() for f in (f1, f2, f3)) * 4 + 8 * 14 * _s(box) else "narrow"
+
+        def _apply_inputs(mode):
+            cols = 4 if mode == "wide" else 2
+            for idx, w in enumerate((f1, f2, f3, btn_calc)):
+                r, c = divmod(idx, cols)
+                pady = (16, 16) if w is btn_calc else (0, 16)
+                w.grid(row=1 + r, column=c, sticky="ew", padx=14, pady=pady)
+            for c in range(4):
+                box.grid_columnconfigure(c, weight=1 if c < cols else 0)
+
+        self._inputs_modes = WidthModes(box, _inputs_mode, _apply_inputs)
+
     def _on_params_changed(self):
         self.auto_populate_saving_tables()
         self.calculate_strategy()
@@ -334,6 +361,7 @@ class FuelStrategyModule(ctk.CTkFrame):
             ("8. Efecto Peso Total",    "step_weight_gain",  1, 3, "Ganancia por vaciado"),
         ]
 
+        step_cards = []
         for title, key, r, c, sub in card_defs:
             card = ctk.CTkFrame(
                 self._cards_grid,
@@ -342,7 +370,7 @@ class FuelStrategyModule(ctk.CTkFrame):
                 border_width=1,
                 border_color=self.colors["border"],
             )
-            card.grid(row=r, column=c, padx=10, pady=10, sticky="nsew")
+            step_cards.append(card)
 
             ctk.CTkLabel(
                 card,
@@ -366,6 +394,10 @@ class FuelStrategyModule(ctk.CTkFrame):
                 font=ctk.CTkFont(family="Segoe UI", size=10),
                 text_color=self.colors["text_secondary"],
             ).pack(anchor="w", padx=12, pady=(0, 10))
+
+        # Responsive: 8 tarjetas en 4 columnas (2 filas) o en 2 columnas si no caben
+        self._steps_grid = ResponsiveGrid(self._cards_grid, step_cards, max_cols=4, min_col_width=205,
+                                          grid_kw=dict(padx=10, pady=10, sticky="nsew"))
 
     # ─── 4. Sección de Paradas y Sliders Interactivos ─────────
     def _build_stints_section(self):
@@ -489,12 +521,14 @@ class FuelStrategyModule(ctk.CTkFrame):
         header_row = ctk.CTkFrame(tables_wrapper, fg_color="transparent")
         header_row.grid(row=0, column=0, columnspan=2, sticky="ew", padx=20, pady=(16, 12))
 
-        ctk.CTkLabel(
+        tables_title = ctk.CTkLabel(
             header_row,
             text="📊  Tablas de Sensibilidad Dinámica (Autocalculadas para +1 y +2 Vueltas)",
             font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"),
             text_color=self.colors["text_primary"],
-        ).pack(side="left")
+            justify="left",
+        )
+        tables_title.pack(side="left")
 
         btn_regen = ctk.CTkButton(
             header_row,
@@ -510,6 +544,27 @@ class FuelStrategyModule(ctk.CTkFrame):
             command=self._on_params_changed,
         )
         btn_regen.pack(side="right")
+
+        # Responsive: el botón pasa bajo el título (que salta de línea) si no caben juntos
+        # (ancho natural = máximo reqwidth observado; con salto de línea solo puede ser menor)
+        title_nat = {"w": 0}
+
+        def _tables_hdr_mode(width):
+            title_nat["w"] = max(title_nat["w"], tables_title.winfo_reqwidth())
+            return "wide" if width >= title_nat["w"] + btn_regen.winfo_reqwidth() + 16 * _s(header_row) else "narrow"
+
+        def _apply_tables_hdr(mode):
+            tables_title.pack_forget()
+            btn_regen.pack_forget()
+            if mode == "wide":
+                tables_title.pack(side="left")
+                btn_regen.pack(side="right")
+            else:
+                tables_title.pack(side="top", anchor="w")
+                btn_regen.pack(side="top", anchor="w", pady=(8, 0))
+
+        self._tables_hdr_modes = WidthModes(header_row, _tables_hdr_mode, _apply_tables_hdr)
+        bind_wraplength(tables_title, header_row, margin=8)
 
         self._tabview = ctk.CTkTabview(
             tables_wrapper,

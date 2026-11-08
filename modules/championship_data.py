@@ -29,6 +29,8 @@ import shutil
 from pathlib import Path
 from tkinter import messagebox
 
+from modules.ui_responsive import ResponsiveGrid
+
 # Raíz de perfiles dinámica (compatible con .py y con .exe compilado)
 APP_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
 PROFILES_ROOT = APP_ROOT / "profiles"
@@ -104,8 +106,10 @@ class ChampionshipDataModule(ctk.CTkFrame):
         header.grid_columnconfigure(1, weight=1)
 
         # Barra de acento NIX
+        # height pequeño + sticky "ns": la barra ocupa el alto de la cabecera. Sin height,
+        # CTkFrame pedía 200 px y la cabecera ocupaba ~200 px de alto en todas las ventanas.
         ctk.CTkFrame(
-            header, width=4, corner_radius=0, fg_color=self.colors["accent"]
+            header, width=4, height=4, corner_radius=0, fg_color=self.colors["accent"]
         ).grid(row=0, column=0, sticky="ns", padx=(0, 16), pady=0)
 
         text_frame = ctk.CTkFrame(header, fg_color="transparent")
@@ -560,6 +564,7 @@ class ChampionshipDataModule(ctk.CTkFrame):
         for w in parent.winfo_children():
             w.destroy()
 
+        cards = []
         for i, (k, v) in enumerate(data.items()):
             card = ctk.CTkFrame(
                 parent,
@@ -568,8 +573,7 @@ class ChampionshipDataModule(ctk.CTkFrame):
                 border_width=1,
                 border_color=self.colors["border"],
             )
-            card.grid(row=0, column=i, padx=(0, 6), pady=0, sticky="ew")
-            parent.grid_columnconfigure(i, weight=1)
+            cards.append(card)
 
             ctk.CTkLabel(
                 card, text=k,
@@ -582,6 +586,17 @@ class ChampionshipDataModule(ctk.CTkFrame):
                 font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
                 text_color=self.colors["accent"],
             ).grid(row=1, column=0, padx=10, pady=(0, 7), sticky="w")
+
+        # Responsive: las mini-cards pasan a varias filas si no caben en una
+        # (un único ResponsiveGrid por contenedor; aquí solo se sustituyen sus items)
+        rgrid = getattr(parent, "_summary_rgrid", None)
+        if rgrid is None:
+            parent._summary_rgrid = ResponsiveGrid(parent, cards, max_cols=max(1, len(cards)),
+                                                   grid_kw=dict(padx=(0, 6), pady=(0, 6), sticky="ew"),
+                                                   equal_cols=True)
+        else:
+            rgrid.max_cols = max(1, len(cards))
+            rgrid.set_items(cards)
 
     # ═══════════════════════════════════════════════════════════
     #  LÓGICA DE CAMPEONATO

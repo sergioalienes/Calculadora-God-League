@@ -43,13 +43,22 @@ import re
 import sys
 from pathlib import Path
 import tkinter as tk
+import warnings
 from tkinter import messagebox
+
+# Mientras el canvas aún no tiene tamaño real (módulo oculto o recién creado) el motor
+# tight no puede ajustar márgenes; es inocuo y se recalcula en el siguiente render.
+warnings.filterwarnings("ignore", message=r".*Tight layout not applied.*")
 
 import matplotlib
 matplotlib.use("TkAgg")
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.ticker as ticker
+
+from modules.ui_responsive import (
+    HeaderLayout, ResponsiveGrid, WidthModes, ZoomAwareFigureCanvas, bind_wraplength, widget_scaling,
+)
 
 APP_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
 PROFILES_ROOT = APP_ROOT / "profiles"
@@ -155,26 +164,27 @@ class TyreStrategyModule(ctk.CTkFrame):
         header.grid(row=0, column=0, sticky="ew")
         header.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkFrame(header, width=4, height=44, fg_color="#FF3B30").grid(
-            row=0, column=0, sticky="nsw", padx=(0, 16)
-        )
+        accent_bar = ctk.CTkFrame(header, width=4, height=44, fg_color="#FF3B30")
+        accent_bar.grid(row=0, column=0, sticky="nsw", padx=(0, 16))
 
         title_box = ctk.CTkFrame(header, fg_color="transparent")
         title_box.grid(row=0, column=1, sticky="w", pady=10)
 
-        ctk.CTkLabel(
+        title_lbl = ctk.CTkLabel(
             title_box,
             text="ESTRATEGIA DE NEUMÁTICOS",
             font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
             text_color=self.colors["text_primary"],
-        ).pack(anchor="w")
+        )
+        title_lbl.pack(anchor="w")
 
-        ctk.CTkLabel(
+        subtitle_lbl = ctk.CTkLabel(
             title_box,
             text="Modelado logarítmico a tramos (x=0 salida, x=1 delta cero, x≥2 degradación) y telemetría de carrera",
             font=ctk.CTkFont(family="Segoe UI", size=12),
             text_color=self.colors["text_secondary"],
-        ).pack(anchor="w")
+        )
+        subtitle_lbl.pack(anchor="w")
 
         # Botones de Acción y Selector de Modelo de Neumáticos
         btn_box = ctk.CTkFrame(header, fg_color="transparent")
@@ -243,6 +253,9 @@ class TyreStrategyModule(ctk.CTkFrame):
         )
         self._btn_delete_tyres.pack(side="left")
 
+        # Responsive: botonera bajo el título y subtítulo con salto de línea si no caben
+        self._header_layout = HeaderLayout(header, accent_bar, title_lbl, subtitle_lbl, btn_box)
+
     def _build_scroll(self):
         self._scroll = ctk.CTkScrollableFrame(
             self,
@@ -285,8 +298,11 @@ class TyreStrategyModule(ctk.CTkFrame):
             font=ctk.CTkFont(family="Segoe UI", size=12),
             text_color=self.colors["accent"],
             anchor="w",
+            justify="left",
         )
         self._lbl_sync_info.pack(fill="x", padx=16, pady=10)
+        # Texto largo: salto de línea al ancho del banner en lugar de cortarse
+        bind_wraplength(self._lbl_sync_info, self._sync_banner, margin=36)
 
     # ─── 2. Modelado de Neumáticos (Tablas de Regresión) ──────
     def _build_regression_section(self):
@@ -317,6 +333,21 @@ class TyreStrategyModule(ctk.CTkFrame):
         self._soft_card.grid(row=0, column=1, padx=(8, 0), sticky="nsew")
         self._soft_card.grid_columnconfigure(0, weight=1)
         self._build_compound_panel(self._soft_card, compound="soft")
+
+        # Responsive: paneles Dura/Blanda uno debajo del otro si no caben lado a lado
+        def _reg_mode(width):
+            s = widget_scaling(reg_wrapper)
+            return "wide" if width >= (2 * 440 + 16) * s else "narrow"
+
+        def _apply_reg(mode):
+            if mode == "wide":
+                self._hard_card.grid(row=0, column=0, columnspan=1, padx=(0, 8), pady=0, sticky="nsew")
+                self._soft_card.grid(row=0, column=1, columnspan=1, padx=(8, 0), pady=0, sticky="nsew")
+            else:
+                self._hard_card.grid(row=0, column=0, columnspan=2, padx=0, pady=0, sticky="nsew")
+                self._soft_card.grid(row=1, column=0, columnspan=2, padx=0, pady=(12, 0), sticky="nsew")
+
+        self._reg_modes = WidthModes(reg_wrapper, _reg_mode, _apply_reg)
 
     def _build_compound_panel(self, parent: ctk.CTkFrame, compound: str):
         is_hard = (compound == "hard")
@@ -373,8 +404,10 @@ class TyreStrategyModule(ctk.CTkFrame):
             font=ctk.CTkFont(family="Segoe UI", size=10, slant="italic"),
             text_color=self.colors["text_secondary"],
             anchor="w",
+            justify="left",
         )
         expl_lbl.pack(fill="x", padx=16, pady=(0, 6))
+        bind_wraplength(expl_lbl, parent, margin=36)
 
         # Contenedor de la tabla de puntos para regresión OLS
         table_container = ctk.CTkFrame(parent, fg_color=self.colors["bg_primary"], corner_radius=8, border_width=1, border_color=self.colors["border"])
@@ -899,13 +932,18 @@ class TyreStrategyModule(ctk.CTkFrame):
             ("📉 Degradación + Calent.", "_lbl_m_deg_loss",    3),
         ]
 
+        metric_widgets = []
         for title, attr_name, col in metric_cards:
             card = ctk.CTkFrame(metrics_bar, fg_color=self.colors["bg_primary"], corner_radius=8, border_width=1, border_color=self.colors["border"])
-            card.grid(row=0, column=col, padx=5, sticky="nsew")
+            metric_widgets.append(card)
             ctk.CTkLabel(card, text=title, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=self.colors["text_secondary"]).pack(anchor="w", padx=10, pady=(8, 2))
             val_lbl = ctk.CTkLabel(card, text="—", font=ctk.CTkFont(family="Segoe UI Mono", size=14, weight="bold"), text_color=self.colors["accent"])
             val_lbl.pack(anchor="w", padx=10, pady=(0, 8))
             setattr(self, attr_name, val_lbl)
+
+        # Responsive: 4 métricas en una fila o en 2x2 si no caben
+        self._metrics_grid = ResponsiveGrid(metrics_bar, metric_widgets, max_cols=4, min_col_width=190,
+                                            grid_kw=dict(padx=5, pady=3, sticky="nsew"))
 
         self._plot_frame = ctk.CTkFrame(chart_wrapper, fg_color=self.colors["bg_primary"], corner_radius=8, border_width=1, border_color=self.colors["border"])
         self._plot_frame.pack(fill="x", padx=20, pady=(0, 16))
@@ -917,7 +955,8 @@ class TyreStrategyModule(ctk.CTkFrame):
         self._ax = self._fig.add_subplot(111)
         self._ax.set_facecolor("#141414")
 
-        self._mpl_canvas = FigureCanvasTkAgg(self._fig, master=self._plot_frame)
+        # Canvas cuya escala sigue el zoom de interfaz (ver modules/ui_responsive.py)
+        self._mpl_canvas = ZoomAwareFigureCanvas(self._fig, master=self._plot_frame)
         self._mpl_canvas.draw()
         self._mpl_canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
         # Si el gráfico se recalcula con el módulo oculto, se pinta al volver a mostrarse
@@ -1541,6 +1580,11 @@ class TyreStrategyModule(ctk.CTkFrame):
     # ═══════════════════════════════════════════════════════════
     #  SINCRONIZACIÓN Y CALLBACKS DE MAIN
     # ═══════════════════════════════════════════════════════════
+
+    def on_ui_zoom_changed(self):
+        """Llamado por main.py tras cambiar el zoom de interfaz: re-escala el gráfico."""
+        if getattr(self, "_mpl_canvas", None) is not None and hasattr(self._mpl_canvas, "refresh_ui_scaling"):
+            self._mpl_canvas.refresh_ui_scaling()
 
     def on_session_data_updated(self, session_data: dict):
         """Callback cuando cambian los datos de campeonato o circuito."""

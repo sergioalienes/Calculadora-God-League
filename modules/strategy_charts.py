@@ -39,6 +39,8 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.ticker import FuncFormatter
 
+from modules.ui_responsive import ResponsiveGrid, WidthModes, ZoomAwareFigureCanvas, widget_scaling
+
 # Suprimir advertencias de glifos no disponibles en fuentes de matplotlib (ej. DejaVu Sans)
 warnings.filterwarnings("ignore", message=r".*missing from font.*")
 
@@ -511,6 +513,19 @@ class StrategyChartsModule(ctk.CTkFrame):
             command=self.delete_current_strategy_action,
         ).pack(side="left")
 
+        # Responsive: si título y botonera no caben en una fila, la botonera baja debajo
+        def _header_mode(width):
+            need = left.winfo_reqwidth() + actions.winfo_reqwidth() + 16 * widget_scaling(header)
+            return "wide" if width >= need else "narrow"
+
+        def _apply_header(mode):
+            if mode == "wide":
+                actions.grid(row=0, column=1, sticky="e", pady=0)
+            else:
+                actions.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        self._header_modes = WidthModes(header, _header_mode, _apply_header)
+
     def _build_sync_banner(self):
         self._sync_banner = ctk.CTkFrame(
             self._scroll,
@@ -581,6 +596,35 @@ class StrategyChartsModule(ctk.CTkFrame):
         )
         self._cbo_strat_tyre.pack(side="left", padx=(0, 4))
 
+        # Responsive: selectores de modelo bajo el texto de sincronización si no caben,
+        # y salto de línea del texto en ventanas muy estrechas.
+        # (el modo solo depende del ancho de los selectores, no del texto, para que el
+        #  salto de línea no pueda hacer oscilar la disposición)
+        banner = self._sync_banner
+        self._lbl_sync_info.configure(justify="left")
+        sync_state = {"mode": None, "wrap": None}
+
+        def _sync_configure(event):
+            if event.widget is not banner or event.width <= 1:
+                return
+            s = widget_scaling(banner)
+            models_w = models_frame.winfo_reqwidth()
+            free_w = event.width - models_w - 44 * s
+            mode = "wide" if free_w >= 300 * s else "narrow"
+            if mode != sync_state["mode"]:
+                sync_state["mode"] = mode
+                if mode == "wide":
+                    models_frame.grid(row=0, column=1, sticky="e", padx=12, pady=6)
+                else:
+                    models_frame.grid(row=1, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
+            avail = free_w if mode == "wide" else event.width - 40 * s
+            wrap = max(200, int(avail / s))
+            if wrap != sync_state["wrap"]:
+                sync_state["wrap"] = wrap
+                self._lbl_sync_info.configure(wraplength=wrap)
+
+        tk.Misc.bind(banner, "<Configure>", _sync_configure, "+")
+
     def _build_kpi_cards(self):
         kpi_frame = ctk.CTkFrame(self._scroll, fg_color="transparent")
         kpi_frame.pack(fill="x", padx=32, pady=(0, 14))
@@ -594,6 +638,7 @@ class StrategyChartsModule(ctk.CTkFrame):
             ("📊 Delta vs Óptima",       "_lbl_kpi_delta_opt",   4),
         ]
 
+        kpi_cards = []
         for title, attr_name, col in cards:
             card = ctk.CTkFrame(
                 kpi_frame,
@@ -602,7 +647,7 @@ class StrategyChartsModule(ctk.CTkFrame):
                 border_width=1,
                 border_color=self.colors["border"],
             )
-            card.grid(row=0, column=col, padx=4, sticky="nsew")
+            kpi_cards.append(card)
 
             ctk.CTkLabel(
                 card,
@@ -619,6 +664,10 @@ class StrategyChartsModule(ctk.CTkFrame):
             )
             val_lbl.pack(anchor="w", padx=10, pady=(0, 8))
             setattr(self, attr_name, val_lbl)
+
+        # Responsive: 5 tarjetas en una fila o repartidas en varias si no caben
+        self._kpi_grid = ResponsiveGrid(kpi_frame, kpi_cards, max_cols=5, min_col_width=165,
+                                        grid_kw=dict(padx=4, pady=3, sticky="nsew"))
 
     def _build_opportunity_banner(self):
         """Banner desplegable dinámico cuando el Safety Car, Rebufo o ahorro permite 1 parada."""
@@ -829,6 +878,9 @@ class StrategyChartsModule(ctk.CTkFrame):
         self._stints_target_frame = ctk.CTkFrame(stints_card, fg_color=self.colors["bg_primary"], corner_radius=8, border_width=1, border_color=self.colors["border"])
         self._stints_target_frame.pack(fill="x", padx=16, pady=(0, 8))
         self._stints_target_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        # Las líneas de cada stint saltan de línea según el ancho disponible (no se cortan)
+        tk.Misc.bind(self._stints_target_frame, "<Configure>",
+                     lambda e: self._update_stint_labels_wrap(e.width) if e.widget is self._stints_target_frame else None, "+")
 
         # Alerta de reglamento de compuestos
         self._lbl_rule_status = ctk.CTkLabel(
@@ -923,6 +975,43 @@ class StrategyChartsModule(ctk.CTkFrame):
         self._draft_segments_container = ctk.CTkFrame(df_box, fg_color="transparent")
         self._draft_segments_container.pack(fill="x", padx=12, pady=(0, 8))
         self._render_draft_segments()
+
+        # Responsive: en ventanas estrechas el panel de Safety Car / Rebufo pasa debajo de
+        # la configuración de stints (antes se comprimía hasta ocultar sus controles).
+        container = self._controls_container
+
+        def _controls_mode(width):
+            s = widget_scaling(container)
+            need = events_card.winfo_reqwidth() + 560 * s
+            return "wide" if width >= need else "narrow"
+
+        def _apply_controls(mode):
+            if mode == "wide":
+                stints_card.grid(row=0, column=0, columnspan=1, padx=(0, 8), pady=0, sticky="nsew")
+                events_card.grid(row=0, column=1, columnspan=1, padx=(8, 0), pady=0, sticky="nsew")
+            else:
+                stints_card.grid(row=0, column=0, columnspan=2, padx=0, pady=0, sticky="nsew")
+                events_card.grid(row=1, column=0, columnspan=2, padx=0, pady=(12, 0), sticky="nsew")
+
+        self._controls_modes = WidthModes(container, _controls_mode, _apply_controls)
+
+    def _update_stint_labels_wrap(self, width: int | None = None):
+        """Ajusta el wraplength de las etiquetas de consumo por stint al ancho de su columna."""
+        boxes = getattr(self, "_stint_ui_boxes", None)
+        if not boxes:
+            return
+        if width is None:
+            width = self._stints_target_frame.winfo_width()
+        if width <= 1:
+            return
+        s = widget_scaling(self._stints_target_frame)
+        wrap = max(140, int(width / s / len(boxes)) - 24)
+        if getattr(self, "_stint_wrap_len", None) == wrap:
+            return
+        self._stint_wrap_len = wrap
+        for _, lbl_h, lbl_v in boxes:
+            lbl_h.configure(wraplength=wrap, justify="left")
+            lbl_v.configure(wraplength=wrap, justify="left")
 
     def _render_sc_segments(self):
         """Renderiza dinámicamente las filas de tramos de Safety Car."""
@@ -1245,8 +1334,13 @@ class StrategyChartsModule(ctk.CTkFrame):
 
         self._ax_pace.set_facecolor("#141414")
         self._ax_bars.set_facecolor("#141414")
+        # Márgenes automáticos en cada render (también al redimensionar): sin esto, en
+        # ventanas estrechas las etiquetas del eje Y y el título quedaban cortados.
+        # ("constrained" porque "tight" no admite este gridspec con ratios de altura)
+        self._fig.set_layout_engine("constrained", h_pad=0.06, w_pad=0.06, hspace=0.04)
 
-        self._mpl_canvas = FigureCanvasTkAgg(self._fig, master=self._plot_frame)
+        # Canvas cuya escala sigue el zoom de interfaz (ver modules/ui_responsive.py)
+        self._mpl_canvas = ZoomAwareFigureCanvas(self._fig, master=self._plot_frame)
         self._mpl_canvas.draw()
         self._mpl_canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
 
@@ -2588,6 +2682,8 @@ class StrategyChartsModule(ctk.CTkFrame):
                 )
                 lbl_v.pack(anchor="w", pady=(2, 0))
                 self._stint_ui_boxes.append((s_box, lbl_h, lbl_v))
+            self._stint_wrap_len = None
+            self._update_stint_labels_wrap()
 
         # Actualizar textos de los widgets existentes sin destruir nada
         for idx, st in enumerate(stint_targets):
@@ -3024,6 +3120,12 @@ class StrategyChartsModule(ctk.CTkFrame):
                     self._lbl_p2_val.configure(text=f"Fin V{p2_val} ({f_txt})", text_color=self.colors["accent"])
             else:
                 self._lbl_p2_val.configure(text=f"Fin V{p2_val}", text_color=self.colors["accent"])
+
+        # Las insignias/anotaciones (BOX, META, stints, inspector) se dibujan sobre el
+        # gráfico y no deben participar en el cálculo de márgenes del motor "tight".
+        for ax in (self._ax_pace, self._ax_bars):
+            for txt in ax.texts:
+                txt.set_in_layout(False)
 
         if self._mpl_canvas:
             self._mpl_canvas.draw_idle()
@@ -3493,6 +3595,11 @@ class StrategyChartsModule(ctk.CTkFrame):
     # ═══════════════════════════════════════════════════════════
     #  CONEXIONES CON EL ORQUESTADOR CENTRAL (MAIN.PY)
     # ═══════════════════════════════════════════════════════════
+
+    def on_ui_zoom_changed(self):
+        """Llamado por main.py tras cambiar el zoom de interfaz: re-escala el gráfico."""
+        if self._mpl_canvas is not None and hasattr(self._mpl_canvas, "refresh_ui_scaling"):
+            self._mpl_canvas.refresh_ui_scaling()
 
     def on_session_data_updated(self, session_data: dict):
         """Inyecta datos de sesión de campeonato y circuito."""

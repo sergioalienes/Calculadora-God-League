@@ -33,6 +33,8 @@ from tkinter import messagebox
 import customtkinter as ctk
 import numpy as np
 
+from modules.ui_responsive import ResponsiveGrid
+
 APP_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
 PROFILES_ROOT = APP_ROOT / "profiles"
 
@@ -348,6 +350,13 @@ class RaceControlHeader(ctk.CTkFrame):
             text_color=self.colors["text_secondary"],
         )
         self._lbl_total_proj_big.pack(anchor="e", padx=10, pady=(0, 6))
+
+        # Responsive: los 5 bloques de la cabecera pasan a varias filas si no caben en una
+        self._layout_grid = ResponsiveGrid(
+            self, [f_strat, f_lap, f_pace, f_time, f_res], max_cols=5,
+            grid_kw=dict(padx=10, pady=10, sticky="w"),
+            item_grid_kw=[dict(padx=14), None, None, None, dict(padx=14, sticky="e")],
+        )
 
     def _step_leader_lap(self, delta: int):
         try:
@@ -2288,8 +2297,10 @@ class LiveControlModule(ctk.CTkFrame):
         self.pilots: list[PilotLiveCard] = []
         for i in range(1, 4):
             card = PilotLiveCard(self._pilots_container, pilot_id=i, colors=self.colors, parent_module=self)
-            card.grid(row=0, column=i - 1, padx=6, pady=0, sticky="nsew")
             self.pilots.append(card)
+        # Responsive: 3 pilotos en columnas; en ventanas estrechas 2 (o 1) por fila
+        self._pilots_grid = ResponsiveGrid(self._pilots_container, self.pilots, max_cols=3, min_col_width=300,
+                                           grid_kw=dict(padx=6, pady=(0, 10), sticky="nsew"))
 
         # ── 3. Barra de Acciones Globales (Inferior) ───────────────────────
         bar = ctk.CTkFrame(self._scroll, fg_color="transparent")

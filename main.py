@@ -15,6 +15,7 @@
 """
 
 import warnings
+import tkinter as tk
 import customtkinter as ctk
 from PIL import Image, ImageTk
 import os
@@ -167,13 +168,14 @@ class CalculadoraApp(ctk.CTk):
             logo_img = Image.open(LOGO_PATH).convert("RGBA")
             logo_img = logo_img.resize((80, 80), Image.LANCZOS)
             self._sidebar_logo = ctk.CTkImage(light_image=logo_img, dark_image=logo_img, size=(80, 80))
-            ctk.CTkLabel(
+            self._sidebar_logo_lbl = ctk.CTkLabel(
                 self.sidebar,
                 image=self._sidebar_logo,
                 text="",
-            ).grid(row=0, column=0, pady=(20, 4))
+            )
+            self._sidebar_logo_lbl.grid(row=0, column=0, pady=(20, 4))
         except Exception:
-            pass
+            self._sidebar_logo_lbl = None
 
         # Nombre del equipo
         ctk.CTkLabel(
@@ -274,6 +276,44 @@ class CalculadoraApp(ctk.CTk):
             text_color=COLORS["border"],
         ).pack(anchor="w")
 
+        # Ventanas bajas (p. ej. 960x560 con zoom 115%): ocultar el logo para que el
+        # selector de ZOOM del pie no quede fuera de la ventana.
+        self._sidebar_compact = None
+        tk.Misc.bind(self.sidebar, "<Configure>", self._on_sidebar_configure, "+")
+        # Al cambiar el zoom cambia el alto del pie (no el de la sidebar): re-evaluar también
+        tk.Misc.bind(footer, "<Configure>", lambda e: self._on_sidebar_configure(), "+")
+
+    def _on_sidebar_configure(self, event=None):
+        logo = getattr(self, "_sidebar_logo_lbl", None)
+        if logo is None or (event is not None and event.widget is not self.sidebar):
+            return
+        height = self.sidebar.winfo_height()
+        if height <= 1:
+            return
+
+        def _pad(v):
+            if isinstance(v, (tuple, list)):
+                return sum(int(x) for x in v)
+            try:
+                return 2 * int(v)
+            except (TypeError, ValueError):
+                return sum(int(x) for x in str(v).split())
+
+        needed = 0
+        for w in self.sidebar.grid_slaves():
+            if w is logo:
+                continue
+            needed += w.winfo_reqheight() + _pad(w.grid_info().get("pady", 0))
+        scale = ctk.ScalingTracker.get_widget_scaling(self.sidebar)
+        logo_h = logo.winfo_reqheight() + int(24 * scale)
+        compact = height < needed + logo_h
+        if compact != self._sidebar_compact:
+            self._sidebar_compact = compact
+            if compact:
+                logo.grid_remove()
+            else:
+                logo.grid()
+
     def _build_content_area(self):
         """
         Contenedor principal de alto rendimiento donde se cargan dinámicamente
@@ -332,6 +372,15 @@ class CalculadoraApp(ctk.CTk):
             ctk.set_widget_scaling(factor)
         except Exception as e:
             print(f"[_apply_zoom] Aviso al aplicar scaling: {e}")
+        # Los gráficos matplotlib no forman parte de CustomTkinter: avisar a los módulos
+        for mod in getattr(self, "_modules", {}).values():
+            if hasattr(mod, "on_ui_zoom_changed"):
+                try:
+                    mod.on_ui_zoom_changed()
+                except Exception as e:
+                    print(f"[_apply_zoom] Aviso al re-escalar gráficos: {e}")
+        if hasattr(self, "sidebar"):
+            self.after_idle(self._on_sidebar_configure)
         if save:
             self.save_app_state()
 
