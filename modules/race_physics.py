@@ -7,6 +7,8 @@ coste en tiempo del ahorro de combustible (Lift & Coast).
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 # Ahorro máximo legal/físico por vuelta respecto al consumo base (Lift & Coast)
@@ -77,3 +79,121 @@ def stint_saving(n_racing_laps: float, fuel_needed: float, usable_tank: float, c
     save_needed = min(save_needed, MAX_SAVING_FRACTION * cons_base)
     target_cons = max(0.1, cons_base - save_needed)
     return save_needed, target_cons, feasible
+
+
+# ════════════════════════════════════════════════════════════════════
+#  MODELOS DE DEGRADACIÓN DE NEUMÁTICOS
+#  x = vueltas de vida de la goma (x=0 vuelta de salida, x=1 vuelta óptima,
+#  x>=2 degradación). Todos devuelven segundos perdidos respecto al ritmo base.
+# ════════════════════════════════════════════════════════════════════
+TYRE_MODEL_KINDS = ("log", "lin", "pw")
+TYRE_MODEL_LABELS = {"log": "Logarítmico", "lin": "Lineal", "pw": "A tramos"}
+PW_MIN_POINTS = 6  # puntos (x >= 2) necesarios para detectar 3 zonas
+
+
+def _to_float(val, default: float) -> float:
+    """Convierte números o textos ('0,57', '01:57.500') a float."""
+    if val is None or val == "":
+        return float(default)
+    if isinstance(val, (int, float)):
+        return float(val)
+    txt = str(val).strip().replace(",", ".")
+    try:
+        if ":" in txt:
+            mins, secs = txt.split(":", 1)
+            return float(mins) * 60.0 + float(secs)
+        return float(txt)
+    except ValueError:
+        return float(default)
+
+
+def tyre_deg(x: float, model: dict) -> float:
+    """Segundos de degradación con x vueltas de vida (válido para x >= 2; nunca negativo)."""
+    kind = model.get("kind", "log")
+    if kind == "lin":
+        return max(0.0, model["a"] * x + model["n"])
+    if kind == "pw":
+        y = (model["c"] + model["s1"] * x
+             + model["d2"] * max(0.0, x - model["b1"])
+             + model["d3"] * max(0.0, x - model["b2"]))
+        return max(0.0, y)
+    return max(0.0, model["a"] * math.log(max(1, x)) + model["n"])
+
+
+def tyre_model_from_data(data: dict, comp: str, default_a: float, default_n: float) -> dict:
+    """
+    Construye el modelo de degradación de un compuesto ('hard'/'soft') a partir de los
+    datos exportados o guardados por el módulo de neumáticos. Los perfiles antiguos
+    (solo <comp>_a / <comp>_n) se interpretan como modelo logarítmico.
+    """
+    data = data or {}
+    m = data.get(f"{comp}_model")
+    if isinstance(m, dict) and m.get("kind") in TYRE_MODEL_KINDS:
+        try:
+            if m["kind"] == "pw":
+                return {"kind": "pw", **{k: float(m[k]) for k in ("c", "s1", "d2", "d3", "b1", "b2")}}
+            return {"kind": m["kind"], "a": float(m["a"]), "n": float(m["n"])}
+        except (KeyError, TypeError, ValueError):
+            pass
+    return {"kind": "log",
+            "a": _to_float(data.get(f"{comp}_a"), default_a),
+            "n": _to_float(data.get(f"{comp}_n"), default_n)}
+
+
+def _r2(ys, pred) -> float:
+    ss_res = float(np.sum((ys - pred) ** 2))
+    ss_tot = float(np.sum((ys - np.mean(ys)) ** 2))
+    r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 1.0
+    return max(0.0, min(1.0, r2))
+
+
+def fit_tyre_model(kind: str, xs, ys) -> dict:
+    """
+    Ajusta por mínimos cuadrados el modelo pedido a los puntos (x, delta) con x >= 2.
+    Devuelve el modelo con su 'r2'. Lanza ValueError si no hay puntos suficientes.
+
+    - 'log': delta = a·ln(x) + n
+    - 'lin': delta = a·x + n
+    - 'pw' : lineal continuo en 3 zonas (peak, mid, cliff) con los dos cambios de
+             pendiente (b1, b2) elegidos automáticamente para minimizar el error.
+    """
+    xs = np.asarray(xs, dtype=float)
+    ys = np.asarray(ys, dtype=float)
+    if len(xs) < 2 or len(set(xs.tolist())) < 2:
+        raise ValueError("Se necesitan al menos 2 vueltas distintas (a partir de la 3.ª del stint).")
+
+    if kind == "lin":
+        a, n = np.polyfit(xs, ys, 1)
+        return {"kind": "lin", "a": float(a), "n": float(n), "r2": _r2(ys, a * xs + n)}
+
+    if kind == "pw":
+        ux = sorted(set(xs.tolist()))
+        if len(xs) < PW_MIN_POINTS or len(ux) < PW_MIN_POINTS:
+            raise ValueError(f"El modelo a tramos necesita al menos {PW_MIN_POINTS} vueltas distintas "
+                             "(a partir de la 3.ª del stint) para detectar las 3 zonas.")
+        best = None
+        # Cada zona debe contener al menos 2 vueltas medidas
+        for i in range(1, len(ux) - 3):
+            for j in range(i + 2, len(ux) - 1):
+                b1, b2 = ux[i], ux[j]
+                A = np.column_stack([np.ones_like(xs), xs, np.maximum(0.0, xs - b1), np.maximum(0.0, xs - b2)])
+                coef, *_ = np.linalg.lstsq(A, ys, rcond=None)
+                sse = float(np.sum((A @ coef - ys) ** 2))
+                if best is None or sse < best[0] - 1e-12:
+                    best = (sse, b1, b2, coef, A)
+        if best is None:
+            raise ValueError("No hay suficientes vueltas para separar las 3 zonas.")
+        _, b1, b2, coef, A = best
+        c, s1, d2, d3 = (float(v) for v in coef)
+        return {"kind": "pw", "c": c, "s1": s1, "d2": d2, "d3": d3, "b1": float(b1), "b2": float(b2),
+                "r2": _r2(ys, A @ coef)}
+
+    us = np.log(xs)
+    a, n = np.polyfit(us, ys, 1)
+    return {"kind": "log", "a": float(a), "n": float(n), "r2": _r2(ys, a * us + n)}
+
+
+def pw_zone_slopes(model: dict) -> tuple[float, float, float]:
+    """Pendientes (s/vuelta) de las zonas peak, mid y cliff de un modelo a tramos."""
+    s1 = model["s1"]
+    return s1, s1 + model["d2"], s1 + model["d2"] + model["d3"]

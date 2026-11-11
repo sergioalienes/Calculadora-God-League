@@ -34,6 +34,7 @@ import customtkinter as ctk
 import numpy as np
 
 from modules.ui_responsive import ResponsiveGrid
+from modules.race_physics import tyre_deg, tyre_model_from_data
 
 APP_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
 PROFILES_ROOT = APP_ROOT / "profiles"
@@ -1789,6 +1790,9 @@ class PilotLiveCard(ctk.CTkFrame):
         s_warm = _num("soft_warmup", 0.400)
         s_a = _num("soft_a", 0.5318)
         s_n = _num("soft_n", -0.3968)
+        # Modelo de degradación elegido en Neumáticos (logarítmico, lineal o a tramos)
+        h_model = tyre_model_from_data(tdata, "hard", h_a, h_n)
+        s_model = tyre_model_from_data(tdata, "soft", s_a, s_n)
 
         # Evento Safety Car
         sc_active = self._var_tac_sc.get()
@@ -1888,8 +1892,7 @@ class PilotLiveCard(ctk.CTkFrame):
 
             base_p = h_base if comp == "hard" else s_base
             warm = h_warm if comp == "hard" else s_warm
-            a_val = h_a if comp == "hard" else s_a
-            n_val = h_n if comp == "hard" else s_n
+            deg_model = h_model if comp == "hard" else s_model
 
             for v in range(start_v, end_v + 1):
                 delta_peso = min(0.0, (f_sim - tank_cap) * weight_sens)
@@ -1899,7 +1902,7 @@ class PilotLiveCard(ctk.CTkFrame):
                 elif tyre_x == 1:
                     t_deg = 0.0
                 else:
-                    t_deg = max(0.0, a_val * math.log(max(1, tyre_x)) + n_val)
+                    t_deg = tyre_deg(tyre_x, deg_model)
 
                 t_green = base_p + t_deg + delta_peso + time_penalty
 

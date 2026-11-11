@@ -15,3 +15,6 @@ scratch/agente1/figs_*/
 scratch/agente1/shots_*/
 scratch/agente1/profiles_backup/
 scratch/agente1/profiles_hashes_antes.txt
+
+# Ejecutables portables generados
+v*.*/

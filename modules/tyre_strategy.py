@@ -57,6 +57,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.ticker as ticker
 
 from modules.race_physics import saving_curve_from_rows, interpolate_saving_penalty, stint_saving
+from modules.race_physics import (
+    fit_tyre_model, tyre_deg, tyre_model_from_data, pw_zone_slopes, TYRE_MODEL_LABELS,
+)
 from modules.ui_responsive import (
     HeaderLayout, ResponsiveGrid, WidthModes, ZoomAwareFigureCanvas, bind_wraplength, widget_scaling,
 )
@@ -112,6 +115,24 @@ class TyreStrategyModule(ctk.CTkFrame):
         self._var_soft_a        = ctk.StringVar(value="0.5318")   # Pendiente logarítmica
         self._var_soft_n        = ctk.StringVar(value="-0.3968")  # Constante
         self._var_soft_r2       = ctk.StringVar(value="0.8634")   # R²
+
+        # ── Stint de test por compuesto (vuelta del stint + tiempo de vuelta) ──
+        # El delta de goma de cada vuelta lo calcula la app restando el efecto del
+        # combustible (consumo y efecto peso del módulo de Combustible).
+        #   stint_laps[comp]  = [{"lap": nº de vuelta del stint, "time": segundos}]
+        #   _legacy[comp]     = True mientras solo existan los puntos antiguos (x, delta)
+        #                       en hard_test_points / soft_test_points sin convertir.
+        self.stint_laps: dict[str, list[dict]] = {"hard": [], "soft": []}
+        self._legacy: dict[str, bool] = {"hard": True, "soft": True}
+        self._fuel_ctx_fresh = False   # True cuando fuel_data corresponde al circuito activo
+        self._var_hard_test_fuel = ctk.StringVar(value="")   # vacío = depósito lleno
+        self._var_soft_test_fuel = ctk.StringVar(value="")
+        # Modelo de degradación por compuesto: "log", "lin" o "pw" (a tramos)
+        self._var_hard_model = ctk.StringVar(value="log")
+        self._var_soft_model = ctk.StringVar(value="log")
+        self._pw_params: dict[str, dict | None] = {"hard": None, "soft": None}
+        self._delta_labels: dict[str, list] = {"hard": [], "soft": []}
+        self._model_widgets: dict[str, dict] = {"hard": {}, "soft": {}}
 
         # ── Asignación de compuestos por stint ────────────────────
         self._var_stint1_tyre = ctk.StringVar(value="soft")  # "soft" o "hard"
@@ -181,7 +202,7 @@ class TyreStrategyModule(ctk.CTkFrame):
 
         subtitle_lbl = ctk.CTkLabel(
             title_box,
-            text="Modelado logarítmico a tramos (x=0 salida, x=1 delta cero, x≥2 degradación) y telemetría de carrera",
+            text="Stint de test por vueltas, modelo de degradación (logarítmico, lineal o a tramos) y ritmo de carrera",
             font=ctk.CTkFont(family="Segoe UI", size=12),
             text_color=self.colors["text_secondary"],
         )
@@ -398,10 +419,26 @@ class TyreStrategyModule(ctk.CTkFrame):
         e_warm.pack(anchor="w", pady=(3, 0))
         e_warm.bind("<FocusOut>", lambda ev: self.recalculate_and_plot())
 
+        # Input 3: Gasolina con la que empezó el stint de test (para restar el efecto peso)
+        var_tfuel = self._var_hard_test_fuel if is_hard else self._var_soft_test_fuel
+        f_t = ctk.CTkFrame(inputs_bar, fg_color="transparent")
+        f_t.grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 8), sticky="w")
+        ctk.CTkLabel(f_t, text="⛽ Gasolina al empezar el stint de test (L):", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=self.colors["text_primary"]).pack(side="left")
+        e_tfuel = ctk.CTkEntry(
+            f_t, textvariable=var_tfuel, width=80, height=30,
+            font=ctk.CTkFont(family="Segoe UI Mono", size=12, weight="bold"),
+            fg_color=self.colors["input_bg"], border_color=self.colors["border"]
+        )
+        e_tfuel.pack(side="left", padx=(8, 6))
+        ctk.CTkLabel(f_t, text="(vacío = depósito lleno)", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=self.colors["text_secondary"]).pack(side="left")
+        e_tfuel.bind("<FocusOut>", lambda ev, c=compound: self._refresh_delta_labels(c))
+        e_tfuel.bind("<Return>", lambda ev, c=compound: self._refresh_delta_labels(c))
+        e_base.bind("<FocusOut>", lambda ev, c=compound: self._refresh_delta_labels(c), add="+")
+
         # Explicación de la función a tramos
         expl_lbl = ctk.CTkLabel(
             parent,
-            text="Fórmula a tramos: x=0 ➔ Base + Calentar | x=1 ➔ Base (Δ=0) | x≥2 ➔ Base + a·ln(x) + n",
+            text="",
             font=ctk.CTkFont(family="Segoe UI", size=10, slant="italic"),
             text_color=self.colors["text_secondary"],
             anchor="w",
@@ -409,11 +446,12 @@ class TyreStrategyModule(ctk.CTkFrame):
         )
         expl_lbl.pack(fill="x", padx=16, pady=(0, 6))
         bind_wraplength(expl_lbl, parent, margin=36)
+        self._model_widgets[compound]["expl"] = expl_lbl
 
         # Contenedor de la tabla de puntos para regresión OLS
         table_container = ctk.CTkFrame(parent, fg_color=self.colors["bg_primary"], corner_radius=8, border_width=1, border_color=self.colors["border"])
         table_container.pack(fill="x", padx=16, pady=(0, 8))
-        table_container.grid_columnconfigure((0, 1, 2), weight=1)
+        table_container.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
         if is_hard:
             self._hard_table_box = table_container
@@ -421,23 +459,42 @@ class TyreStrategyModule(ctk.CTkFrame):
             self._soft_table_box = table_container
 
         # Header de la tabla
-        for col_idx, text in enumerate(["Vuelta Test (x ≥ 2)", "Δ Deg vs V1 (s)", "Acción"]):
+        for col_idx, text in enumerate(["Vuelta del stint", "Tiempo de vuelta", "Δ goma (auto)", "Acción"]):
             ctk.CTkLabel(
                 table_container,
                 text=text,
                 font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                 text_color=self.colors["text_secondary"],
-            ).grid(row=0, column=col_idx, padx=6, pady=4, sticky="w" if col_idx < 2 else "e")
+            ).grid(row=0, column=col_idx, padx=6, pady=4, sticky="w" if col_idx < 3 else "e")
 
         self._render_test_points(compound)
 
-        # Barra de botones (+ punto y Ajustar OLS)
+        # Selector del modelo de degradación
+        model_bar = ctk.CTkFrame(parent, fg_color="transparent")
+        model_bar.pack(fill="x", padx=16, pady=(0, 8))
+        ctk.CTkLabel(model_bar, text="Modelo de degradación:", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=self.colors["text_primary"]).pack(side="left", padx=(0, 8))
+        seg_model = ctk.CTkSegmentedButton(
+            model_bar,
+            values=[TYRE_MODEL_LABELS[k] for k in ("log", "lin", "pw")],
+            command=lambda label, c=compound: self._on_model_kind_changed(c, label),
+            selected_color=self.colors["accent"],
+            selected_hover_color=self.colors["accent_hover"],
+            unselected_color=self.colors["bg_primary"],
+            unselected_hover_color=self.colors["border"],
+            text_color="#FFFFFF",
+            font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+        )
+        seg_model.set(TYRE_MODEL_LABELS["log"])
+        seg_model.pack(side="left")
+        self._model_widgets[compound]["seg"] = seg_model
+
+        # Barra de botones (+ vuelta y Ajustar modelo)
         btn_bar = ctk.CTkFrame(parent, fg_color="transparent")
         btn_bar.pack(fill="x", padx=16, pady=(0, 10))
 
         ctk.CTkButton(
             btn_bar,
-            text="+ Añadir Vuelta Test",
+            text="+ Añadir Vuelta",
             width=120,
             height=28,
             corner_radius=6,
@@ -449,7 +506,7 @@ class TyreStrategyModule(ctk.CTkFrame):
 
         ctk.CTkButton(
             btn_bar,
-            text="⚡ Ajustar Regresión OLS",
+            text="⚡ Ajustar Modelo",
             width=160,
             height=28,
             corner_radius=6,
@@ -471,7 +528,8 @@ class TyreStrategyModule(ctk.CTkFrame):
         # Param a
         c_a = ctk.CTkFrame(res_card, fg_color="transparent")
         c_a.grid(row=0, column=0, padx=8, pady=8, sticky="w")
-        ctk.CTkLabel(c_a, text="Pendiente a:", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=self.colors["text_secondary"]).pack(anchor="w")
+        lbl_cap_a = ctk.CTkLabel(c_a, text="Pendiente a:", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=self.colors["text_secondary"])
+        lbl_cap_a.pack(anchor="w")
         e_a = ctk.CTkEntry(c_a, textvariable=var_a, width=90, height=30, font=ctk.CTkFont(family="Segoe UI Mono", size=11, weight="bold"))
         e_a.pack(anchor="w", pady=(2, 0))
         e_a.bind("<FocusOut>", lambda ev: self.recalculate_and_plot())
@@ -479,7 +537,8 @@ class TyreStrategyModule(ctk.CTkFrame):
         # Param n
         c_n = ctk.CTkFrame(res_card, fg_color="transparent")
         c_n.grid(row=0, column=1, padx=8, pady=8, sticky="w")
-        ctk.CTkLabel(c_n, text="Constante n:", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=self.colors["text_secondary"]).pack(anchor="w")
+        lbl_cap_n = ctk.CTkLabel(c_n, text="Constante n:", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=self.colors["text_secondary"])
+        lbl_cap_n.pack(anchor="w")
         e_n = ctk.CTkEntry(c_n, textvariable=var_n, width=90, height=30, font=ctk.CTkFont(family="Segoe UI Mono", size=11, weight="bold"))
         e_n.pack(anchor="w", pady=(2, 0))
         e_n.bind("<FocusOut>", lambda ev: self.recalculate_and_plot())
@@ -500,38 +559,162 @@ class TyreStrategyModule(ctk.CTkFrame):
         else:
             self._lbl_soft_r2 = lbl_r2
 
+        # Resumen en lenguaje claro del modelo ajustado (zonas peak/mid/cliff, s por vuelta…)
+        lbl_summary = ctk.CTkLabel(
+            res_card, text="", anchor="w", justify="left",
+            font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+            text_color=self.colors["text_primary"],
+        )
+        lbl_summary.grid(row=1, column=0, columnspan=3, padx=8, pady=(0, 8), sticky="w")
+        bind_wraplength(lbl_summary, res_card, margin=24)
+        self._model_widgets[compound].update(summary=lbl_summary, e_a=e_a, e_n=e_n, cap_a=lbl_cap_a, cap_n=lbl_cap_n)
+        self._update_model_summary(compound)
+
+    # ─── Stint de test: conversión tiempo de vuelta ➔ delta de goma ───
+    def _var_for(self, compound: str, name: str):
+        return getattr(self, f"_var_{compound}_{name}")
+
+    def _base_lap(self, compound: str) -> float:
+        return self._get_hard_base_lap() if compound == "hard" else self._get_soft_base_lap()
+
+    def _fuel_ctx(self) -> tuple[float, float, float]:
+        """(depósito L, consumo L/v, efecto peso s/L) del módulo de Combustible."""
+        tank = float(self.session_data.get("fuel_capacity_l", 70.0))
+        cons = float(self.fuel_data.get("cons_lap", 2.15))
+        sens = self.fuel_data.get("weight_sens")
+        if sens is None:
+            sens = self.fuel_data.get("calc_results", {}).get("weight_sens")
+        if sens is None:
+            sens = self.session_data.get("weight_sens", 0.015)
+        return tank, cons, float(sens)
+
+    def _test_start_fuel(self, compound: str) -> float:
+        tank = self._fuel_ctx()[0]
+        txt = self._var_for(compound, "test_fuel").get().strip().replace(",", ".")
+        try:
+            return max(0.0, min(tank, float(txt))) if txt else tank
+        except ValueError:
+            return tank
+
+    def _test_weight_delta(self, compound: str, lap: int) -> float:
+        """Efecto peso (s, <= 0) en la vuelta 'lap' del stint de test: el ritmo base es a depósito lleno."""
+        tank, cons, sens = self._fuel_ctx()
+        fuel = max(0.0, self._test_start_fuel(compound) - (lap - 1) * cons)
+        return min(0.0, (fuel - tank) * sens)
+
+    def _tyre_delta(self, compound: str, lap: int, time_s: float) -> float:
+        """Delta de goma = tiempo de vuelta − ritmo base − efecto del combustible."""
+        return time_s - self._base_lap(compound) - self._test_weight_delta(compound, lap)
+
+    def _legacy_points(self, compound: str) -> list[dict]:
+        return self.hard_test_points if compound == "hard" else self.soft_test_points
+
+    def _legacy_as_laps(self, compound: str) -> list[dict]:
+        """Convierte los puntos antiguos (x, delta) en vueltas de stint con su tiempo equivalente."""
+        base = self._base_lap(compound)
+        rows = []
+        for pt in self._legacy_points(compound):
+            lap = int(pt["lap"]) + 1
+            rows.append({"lap": lap, "time": base + float(pt["delta"]) + self._test_weight_delta(compound, lap)})
+        return rows
+
+    def _ensure_laps(self, compound: str, force: bool = False):
+        """Pasa definitivamente de puntos antiguos a tiempos de vuelta cuando ya se conoce el combustible."""
+        if self._legacy[compound] and (force or self._fuel_ctx_fresh):
+            self.stint_laps[compound] = self._legacy_as_laps(compound)
+            self._legacy[compound] = False
+
+    def _display_laps(self, compound: str) -> list[dict]:
+        return self._legacy_as_laps(compound) if self._legacy[compound] else self.stint_laps[compound]
+
+    def _fit_points(self, compound: str) -> list[tuple[int, float]]:
+        """Puntos (x = vuelta − 1, delta de goma) con x >= 2 que alimentan el ajuste."""
+        if self._legacy[compound]:
+            pts = [(int(pt["lap"]), float(pt["delta"])) for pt in self._legacy_points(compound)]
+        else:
+            pts = [(int(r["lap"]) - 1, self._tyre_delta(compound, int(r["lap"]), float(r["time"])))
+                   for r in self.stint_laps[compound]]
+        return [(x, d) for x, d in pts if x >= 2]
+
+    def _points_for_save(self, compound: str) -> list[dict]:
+        """Puntos (x, delta) equivalentes, para compatibilidad con perfiles anteriores."""
+        if self._legacy[compound]:
+            return [dict(pt) for pt in self._legacy_points(compound)]
+        return [{"lap": int(r["lap"]) - 1, "delta": round(self._tyre_delta(compound, int(r["lap"]), float(r["time"])), 4)}
+                for r in self.stint_laps[compound] if int(r["lap"]) >= 2]
+
+    def _model_kind(self, compound: str) -> str:
+        kind = self._var_for(compound, "model").get()
+        return kind if kind in TYRE_MODEL_LABELS else "log"
+
+    def _model_dict(self, compound: str) -> dict:
+        """Modelo de degradación activo del compuesto, listo para race_physics.tyre_deg()."""
+        kind = self._model_kind(compound)
+        if kind == "pw" and self._pw_params[compound]:
+            return dict(self._pw_params[compound], kind="pw")
+        a = self._get_hard_a() if compound == "hard" else self._get_soft_a()
+        n = self._get_hard_n() if compound == "hard" else self._get_soft_n()
+        return {"kind": "lin" if kind == "lin" else "log", "a": a, "n": n}
+
+    def _delta_text(self, compound: str, lap: int, time_s: float) -> tuple[str, str]:
+        delta = self._tyre_delta(compound, lap, time_s)
+        if lap <= 1:
+            return f"{delta:+.3f}  (salida, no cuenta)", self.colors["text_secondary"]
+        if lap == 2:
+            return f"{delta:+.3f}  (vuelta base)", self.colors["text_secondary"]
+        return f"{delta:+.3f}", self.colors["accent"]
+
+    def _refresh_delta_labels(self, compound: str):
+        """Recalcula la columna 'Δ goma' (cambia con el ritmo base, el consumo o la gasolina del test)."""
+        rows = self._display_laps(compound)
+        for lbl, r in zip(self._delta_labels[compound], rows):
+            try:
+                txt, col = self._delta_text(compound, int(r["lap"]), float(r["time"]))
+                lbl.configure(text=txt, text_color=col)
+            except tk.TclError:
+                pass
+
     def _render_test_points(self, compound: str):
         is_hard = (compound == "hard")
         container = self._hard_table_box if is_hard else self._soft_table_box
-        points = self.hard_test_points if is_hard else self.soft_test_points
+        rows = self._display_laps(compound)
 
         for w in container.winfo_children():
             info = w.grid_info()
             if info and int(info.get("row", 0)) > 0:
                 w.destroy()
+        self._delta_labels[compound] = []
 
-        for idx, pt in enumerate(points):
+        for idx, r in enumerate(rows):
             row_idx = idx + 1
 
-            vx = ctk.StringVar(value=str(pt["lap"]))
+            vx = ctk.StringVar(value=str(int(r["lap"])))
             ex = ctk.CTkEntry(
-                container, textvariable=vx, width=75, height=30,
+                container, textvariable=vx, width=70, height=30,
                 font=ctk.CTkFont(family="Segoe UI Mono", size=11, weight="bold"),
                 justify="center",
                 fg_color=self.colors["input_bg"], border_color=self.colors["border"]
             )
             ex.grid(row=row_idx, column=0, padx=6, pady=3, sticky="w")
-            ex.bind("<FocusOut>", lambda ev, i=idx, var=vx, c=compound: self._on_pt_edited(c, i, "lap", var.get()))
+            ex.bind("<FocusOut>", lambda ev, i=idx, var=vx, c=compound: self._on_pt_edited(c, i, "lap", var))
+            ex.bind("<Return>", lambda ev, i=idx, var=vx, c=compound: self._on_pt_edited(c, i, "lap", var))
 
-            vd = ctk.StringVar(value=f"{pt['delta']:.3f}")
+            vd = ctk.StringVar(value=self._format_lap_time(float(r["time"])))
             ed = ctk.CTkEntry(
-                container, textvariable=vd, width=85, height=30,
+                container, textvariable=vd, width=100, height=30,
                 font=ctk.CTkFont(family="Segoe UI Mono", size=11, weight="bold"),
                 justify="center",
                 fg_color=self.colors["input_bg"], border_color=self.colors["border"]
             )
             ed.grid(row=row_idx, column=1, padx=6, pady=3, sticky="w")
-            ed.bind("<FocusOut>", lambda ev, i=idx, var=vd, c=compound: self._on_pt_edited(c, i, "delta", var.get()))
+            ed.bind("<FocusOut>", lambda ev, i=idx, var=vd, c=compound: self._on_pt_edited(c, i, "time", var))
+            ed.bind("<Return>", lambda ev, i=idx, var=vd, c=compound: self._on_pt_edited(c, i, "time", var))
+
+            txt, col = self._delta_text(compound, int(r["lap"]), float(r["time"]))
+            lbl = ctk.CTkLabel(container, text=txt, text_color=col, anchor="w",
+                               font=ctk.CTkFont(family="Segoe UI Mono", size=11, weight="bold"))
+            lbl.grid(row=row_idx, column=2, padx=6, pady=3, sticky="w")
+            self._delta_labels[compound].append(lbl)
 
             ctk.CTkButton(
                 container,
@@ -544,79 +727,127 @@ class TyreStrategyModule(ctk.CTkFrame):
                 text_color="#FF6B6B",
                 font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
                 command=lambda i=idx, c=compound: self._delete_test_point(c, i),
-            ).grid(row=row_idx, column=2, padx=6, pady=3, sticky="e")
+            ).grid(row=row_idx, column=3, padx=6, pady=3, sticky="e")
 
-    def _on_pt_edited(self, compound: str, idx: int, field: str, value: str):
-        points = self.hard_test_points if compound == "hard" else self.soft_test_points
-        if idx >= len(points):
+    @staticmethod
+    def _format_lap_time(seconds: float) -> str:
+        seconds = max(0.0, seconds)
+        return f"{int(seconds // 60)}:{seconds % 60:06.3f}"
+
+    def _on_pt_edited(self, compound: str, idx: int, field: str, var):
+        self._ensure_laps(compound, force=True)
+        rows = self.stint_laps[compound]
+        if idx >= len(rows):
             return
-        try:
-            val = float(value.replace(",", "."))
-            if field == "lap":
-                points[idx]["lap"] = max(2, int(val))
-            else:
-                points[idx]["delta"] = val
-        except ValueError:
-            pass
+        value = str(var.get())
+        if field == "lap":
+            try:
+                rows[idx]["lap"] = max(1, int(float(value.replace(",", "."))))
+            except ValueError:
+                pass
+            var.set(str(rows[idx]["lap"]))
+        else:
+            t = self._parse_time_str(value, rows[idx]["time"])
+            if t > 0:
+                rows[idx]["time"] = round(t, 3)
+            var.set(self._format_lap_time(rows[idx]["time"]))
+        self._refresh_delta_labels(compound)
 
     def _add_test_point(self, compound: str):
-        points = self.hard_test_points if compound == "hard" else self.soft_test_points
-        if points:
-            last_lap = points[-1]["lap"]
-            last_delta = points[-1]["delta"]
-            points.append({"lap": last_lap + 4, "delta": round(last_delta + 0.15, 3)})
+        self._ensure_laps(compound, force=True)
+        rows = self.stint_laps[compound]
+        if rows:
+            last = max(rows, key=lambda r: r["lap"])
+            rows.append({"lap": int(last["lap"]) + 1, "time": last["time"]})
         else:
-            points.append({"lap": 4, "delta": 0.18})
+            rows.append({"lap": 2, "time": round(self._base_lap(compound), 3)})
         self._render_test_points(compound)
 
     def _delete_test_point(self, compound: str, idx: int):
-        points = self.hard_test_points if compound == "hard" else self.soft_test_points
-        if 0 <= idx < len(points):
-            points.pop(idx)
+        self._ensure_laps(compound, force=True)
+        rows = self.stint_laps[compound]
+        if 0 <= idx < len(rows):
+            rows.pop(idx)
             self._render_test_points(compound)
 
-    def fit_regression(self, compound: str, update_ui: bool = True):
-        """
-        Calcula a y n mediante Mínimos Cuadrados Ordinarios (OLS) sobre u = ln(x)
-        para x >= 2, garantizando el máximo R² matemáticamente posible.
-        """
-        points = self.hard_test_points if compound == "hard" else self.soft_test_points
-        valid = [(pt["lap"], pt["delta"]) for pt in points if pt["lap"] >= 2]
+    def _on_model_kind_changed(self, compound: str, label: str):
+        """Cambia entre modelo logarítmico, lineal o a tramos y reajusta con las vueltas actuales."""
+        kind = next((k for k, v in TYRE_MODEL_LABELS.items() if v == label), "log")
+        var = self._var_for(compound, "model")
+        prev = var.get()
+        var.set(kind)
+        if not self.fit_regression(compound):
+            var.set(prev if prev in TYRE_MODEL_LABELS else "log")
+            self._update_model_summary(compound)
 
-        if len(valid) < 2:
-            if update_ui:
-                messagebox.showwarning("Puntos Insuficientes", "Se necesitan al menos 2 puntos con vuelta x ≥ 2 para ajustar la regresión.")
+    def _update_model_summary(self, compound: str):
+        """Actualiza la fórmula, el resumen del modelo y el estado de las casillas a/n."""
+        w = self._model_widgets.get(compound, {})
+        if not w.get("summary"):
             return
-
-        x_vals = np.array([float(p[0]) for p in valid])
-        y_vals = np.array([float(p[1]) for p in valid])
-        u_vals = np.log(x_vals)
-
-        a, n = np.polyfit(u_vals, y_vals, 1)
-
-        y_pred = a * u_vals + n
-        ss_res = float(np.sum((y_vals - y_pred) ** 2))
-        ss_tot = float(np.sum((y_vals - np.mean(y_vals)) ** 2))
-        r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 1.0
-        r2 = max(0.0, min(1.0, r2))
-
-        if compound == "hard":
-            self._var_hard_a.set(f"{a:.4f}")
-            self._var_hard_n.set(f"{n:.4f}")
-            self._var_hard_r2.set(f"{r2:.4f}")
-            if hasattr(self, "_lbl_hard_r2"):
-                color = "#51CF66" if r2 >= 0.90 else ("#FFA94D" if r2 >= 0.70 else "#FF6B6B")
-                self._lbl_hard_r2.configure(text_color=color)
+        kind = self._model_kind(compound)
+        model = self._model_dict(compound)
+        head = "x = vuelta del stint − 1  ·  x=0 ➔ Base + Calentar | x=1 ➔ Base (Δ=0) | x≥2 ➔ Base + "
+        if model["kind"] == "pw":
+            s1, s2, s3 = pw_zone_slopes(model)
+            v1, v2 = int(round(model["b1"])) + 1, int(round(model["b2"])) + 1
+            formula = "3 rectas (peak, mid, cliff)"
+            summary = (f"Peak: hasta V{v1} ({s1:+.3f} s/v)   ·   Mid: V{v1}–V{v2} ({s2:+.3f} s/v)   ·   "
+                       f"Cliff: desde V{v2} ({s3:+.3f} s/v)")
+        elif model["kind"] == "lin":
+            formula = "a·x + n"
+            summary = f"Lineal: la goma pierde {model['a']:+.3f} s en cada vuelta."
         else:
-            self._var_soft_a.set(f"{a:.4f}")
-            self._var_soft_n.set(f"{n:.4f}")
-            self._var_soft_r2.set(f"{r2:.4f}")
-            if hasattr(self, "_lbl_soft_r2"):
-                color = "#51CF66" if r2 >= 0.90 else ("#FFA94D" if r2 >= 0.70 else "#FF6B6B")
-                self._lbl_soft_r2.configure(text_color=color)
+            formula = "a·ln(x) + n"
+            summary = "Logarítmico: pierde más al principio y luego se va estabilizando."
+        if kind == "pw" and model["kind"] != "pw":
+            summary = "A tramos sin ajustar todavía: pulsa «Ajustar Modelo» (mientras tanto se usa el logarítmico)."
+        w["expl"].configure(text=head + formula)
+        w["summary"].configure(text=summary)
+        pw = (kind == "pw")
+        w["cap_a"].configure(text="a (logarítmico de respaldo):" if pw else "Pendiente a:")
+        w["cap_n"].configure(text="n (logarítmico de respaldo):" if pw else "Constante n:")
+        for key in ("e_a", "e_n"):
+            w[key].configure(state="disabled" if pw else "normal")
+        if w.get("seg") is not None and w["seg"].get() != TYRE_MODEL_LABELS[kind]:
+            w["seg"].set(TYRE_MODEL_LABELS[kind])
+
+    def fit_regression(self, compound: str, update_ui: bool = True) -> bool:
+        """
+        Ajusta por mínimos cuadrados el modelo elegido (logarítmico, lineal o a tramos)
+        a los deltas de goma de las vueltas con x >= 2 (3.ª vuelta del stint en adelante).
+        Devuelve True si el ajuste se ha podido hacer.
+        """
+        pts = self._fit_points(compound)
+        kind = self._model_kind(compound)
+        xs = [float(p[0]) for p in pts]
+        ys = [float(p[1]) for p in pts]
+        try:
+            model = fit_tyre_model(kind, xs, ys)
+            # a y n siempre guardan un ajuste simple: el propio modelo (log/lineal) o,
+            # en el modelo a tramos, un logarítmico de respaldo para perfiles antiguos.
+            simple = model if kind != "pw" else fit_tyre_model("log", xs, ys)
+        except ValueError as e:
+            if update_ui:
+                messagebox.showwarning("Vueltas insuficientes", str(e))
+            return False
+
+        self._pw_params[compound] = (
+            {k: model[k] for k in ("c", "s1", "d2", "d3", "b1", "b2")} if kind == "pw" else None
+        )
+        r2 = model["r2"]
+        self._var_for(compound, "a").set(f"{simple['a']:.4f}")
+        self._var_for(compound, "n").set(f"{simple['n']:.4f}")
+        self._var_for(compound, "r2").set(f"{r2:.4f}")
+        lbl = getattr(self, f"_lbl_{compound}_r2", None)
+        if lbl is not None:
+            lbl.configure(text_color="#51CF66" if r2 >= 0.90 else ("#FFA94D" if r2 >= 0.70 else "#FF6B6B"))
+        self._update_model_summary(compound)
 
         if update_ui:
+            self._refresh_delta_labels(compound)
             self.recalculate_and_plot()
+        return True
 
     # ─── 3. Control de Paradas y Asignación de Compuestos ─────
     def _build_stints_and_tyres_section(self):
@@ -1036,7 +1267,7 @@ class TyreStrategyModule(ctk.CTkFrame):
         Función a tramos estricta:
           x = 0 ➔ Ritmo Base (70L) + Pérdida Calentar Rueda (vuelta de salida con gomas frías)
           x = 1 ➔ Ritmo Base (70L) (vuelta óptima de trabajo, Δdeg = 0.000s forzado)
-          x >= 2 ➔ Ritmo Base (70L) + max(0.0, a·ln(x) + n)
+          x >= 2 ➔ Ritmo Base (70L) + degradación del modelo elegido (logarítmico, lineal o a tramos)
         """
         is_hard = (compound == "hard")
         base_lap = self._get_hard_base_lap() if is_hard else self._get_soft_base_lap()
@@ -1047,10 +1278,7 @@ class TyreStrategyModule(ctk.CTkFrame):
         elif x == 1:
             return base_lap
         else:
-            a = self._get_hard_a() if is_hard else self._get_soft_a()
-            n = self._get_hard_n() if is_hard else self._get_soft_n()
-            deg = a * math.log(x) + n
-            return base_lap + max(0.0, deg)
+            return base_lap + tyre_deg(x, self._model_dict(compound))
 
     def _calculate_pit_box_time(self, fuel_to_load: float, tyre_change_s: float, refuel_rate: float, car_lift_s: float = 2.0) -> tuple[float, str]:
         """Calcula el tiempo de parada estacionaria en box y el factor limitante."""
@@ -1414,18 +1642,14 @@ class TyreStrategyModule(ctk.CTkFrame):
         self._var_hard_a.set(data.get("hard_a", "0.2223"))
         self._var_hard_n.set(data.get("hard_n", "-0.1208"))
         self._var_hard_r2.set(data.get("hard_r2", "0.9408"))
-        if "hard_test_points" in data and data["hard_test_points"]:
-            self.hard_test_points = [dict(p) for p in data["hard_test_points"]]
-            self._render_test_points("hard")
 
         self._var_soft_base_lap.set(data.get("soft_base_lap", "01:24.050"))
         self._var_soft_warmup.set(data.get("soft_warmup", "0.400"))
         self._var_soft_a.set(data.get("soft_a", "0.5318"))
         self._var_soft_n.set(data.get("soft_n", "-0.3968"))
         self._var_soft_r2.set(data.get("soft_r2", "0.8634"))
-        if "soft_test_points" in data and data["soft_test_points"]:
-            self.soft_test_points = [dict(p) for p in data["soft_test_points"]]
-            self._render_test_points("soft")
+        for comp in ("hard", "soft"):
+            self._apply_test_data(comp, data)
 
         s1 = data.get("stint1_tyre", "soft")
         s2 = data.get("stint2_tyre", "hard")
@@ -1465,7 +1689,7 @@ class TyreStrategyModule(ctk.CTkFrame):
                 {"lap": 18, "delta": 0.52},
                 {"lap": 24, "delta": 0.65},
             ]
-            self._render_test_points("hard")
+            self._reset_test_state("hard")
 
             self._var_soft_base_lap.set(self._format_seconds(max(0.1, circ_base - 0.450)))
             self._var_soft_warmup.set("0.400")
@@ -1479,7 +1703,7 @@ class TyreStrategyModule(ctk.CTkFrame):
                 {"lap": 14, "delta": 0.95},
                 {"lap": 18, "delta": 1.38},
             ]
-            self._render_test_points("soft")
+            self._reset_test_state("soft")
 
             self._var_stint1_tyre.set("soft")
             if hasattr(self, "_seg_st1"):
@@ -1498,6 +1722,70 @@ class TyreStrategyModule(ctk.CTkFrame):
         if data:
             self._apply_tyre_model_data(data)
 
+    def _reset_test_state(self, compound: str):
+        """Vuelve a puntos antiguos (x, delta) por defecto, modelo logarítmico y depósito lleno."""
+        self.stint_laps[compound] = []
+        self._legacy[compound] = True
+        self._pw_params[compound] = None
+        self._var_for(compound, "model").set("log")
+        self._var_for(compound, "test_fuel").set("")
+        self._ensure_laps(compound)
+        self._render_test_points(compound)
+        self._update_model_summary(compound)
+
+    def _apply_test_data(self, compound: str, data: dict):
+        """Carga el stint de test y el modelo de degradación de un compuesto desde un perfil."""
+        self._var_for(compound, "test_fuel").set(str(data.get(f"{compound}_test_fuel", "") or ""))
+        model = tyre_model_from_data(data, compound, 0.0, 0.0)
+        saved = data.get(f"{compound}_model")
+        kind = model["kind"] if isinstance(saved, dict) else "log"
+        self._var_for(compound, "model").set(kind)
+        self._pw_params[compound] = (
+            {k: model[k] for k in ("c", "s1", "d2", "d3", "b1", "b2")} if kind == "pw" else None
+        )
+
+        laps = []
+        for r in data.get(f"{compound}_stint_laps") or []:
+            try:
+                t = self._parse_time_str(str(r["time"]), 0.0)
+                # "time_s" conserva todos los decimales; se usa si coincide con el texto visible
+                t_exact = r.get("time_s")
+                if isinstance(t_exact, (int, float)) and abs(float(t_exact) - t) < 0.0006:
+                    t = float(t_exact)
+                    laps.append({"lap": max(1, int(r["lap"])), "time": t})
+                    continue
+                if t > 0:
+                    laps.append({"lap": max(1, int(r["lap"])), "time": round(t, 3)})
+            except (KeyError, TypeError, ValueError):
+                continue
+        if laps:
+            self.stint_laps[compound] = laps
+            self._legacy[compound] = False
+        elif data.get(f"{compound}_test_points"):
+            # Perfil anterior: solo deltas (x, delta). Se convierten a tiempos de vuelta
+            # en cuanto se conozca el combustible del circuito activo.
+            pts = [dict(pt) for pt in data[f"{compound}_test_points"]]
+            if compound == "hard":
+                self.hard_test_points = pts
+            else:
+                self.soft_test_points = pts
+            self.stint_laps[compound] = []
+            self._legacy[compound] = True
+            self._ensure_laps(compound)
+        self._render_test_points(compound)
+        self._update_model_summary(compound)
+
+    def _test_data_for_save(self, compound: str) -> dict:
+        model = self._model_dict(compound)
+        return {
+            f"{compound}_model": model,
+            f"{compound}_test_fuel": self._var_for(compound, "test_fuel").get().strip(),
+            f"{compound}_stint_laps": [
+                {"lap": int(r["lap"]), "time": self._format_lap_time(float(r["time"])), "time_s": float(r["time"])}
+                for r in self.stint_laps[compound]
+            ],
+        }
+
     def save_tyre_profile(self):
         """Guarda el modelo de neumáticos actual con un nombre."""
         m_path = self._get_tyre_models_path()
@@ -1515,19 +1803,23 @@ class TyreStrategyModule(ctk.CTkFrame):
             return
         name = name.strip()
 
+        for comp in ("hard", "soft"):
+            self._ensure_laps(comp, force=True)
         data = {
             "hard_base_lap": self._var_hard_base_lap.get(),
             "hard_warmup": self._var_hard_warmup.get(),
             "hard_a": self._var_hard_a.get(),
             "hard_n": self._var_hard_n.get(),
             "hard_r2": self._var_hard_r2.get(),
-            "hard_test_points": list(self.hard_test_points),
+            "hard_test_points": self._points_for_save("hard"),
+            **self._test_data_for_save("hard"),
             "soft_base_lap": self._var_soft_base_lap.get(),
             "soft_warmup": self._var_soft_warmup.get(),
             "soft_a": self._var_soft_a.get(),
             "soft_n": self._var_soft_n.get(),
             "soft_r2": self._var_soft_r2.get(),
-            "soft_test_points": list(self.soft_test_points),
+            "soft_test_points": self._points_for_save("soft"),
+            **self._test_data_for_save("soft"),
             "stint1_tyre": self._var_stint1_tyre.get(),
             "stint2_tyre": self._var_stint2_tyre.get(),
             "stint3_tyre": self._var_stint3_tyre.get(),
@@ -1643,6 +1935,8 @@ class TyreStrategyModule(ctk.CTkFrame):
             self._var_soft_base_lap.set(self._format_seconds(max(0.1, base_lap_s - 0.450)))
 
         if (new_champ, new_circ) != (last_champ, last_circ):
+            # El combustible en memoria es del circuito anterior hasta que llegue el nuevo
+            self._fuel_ctx_fresh = False
             self.load_tyre_profile()
             self._update_slider_bounds()
         else:
@@ -1658,6 +1952,16 @@ class TyreStrategyModule(ctk.CTkFrame):
         if not fuel_data:
             return
         self.fuel_data = fuel_data
+        # Con el consumo y el efecto peso del circuito activo ya se pueden convertir los
+        # perfiles antiguos a tiempos de vuelta y recalcular los deltas de goma mostrados.
+        self._fuel_ctx_fresh = True
+        for comp in ("hard", "soft"):
+            was_legacy = self._legacy[comp]
+            self._ensure_laps(comp)
+            if was_legacy:
+                self._render_test_points(comp)
+            else:
+                self._refresh_delta_labels(comp)
 
         trunc_laps = fuel_data.get("truncated_laps", 43)
         self._var_total_laps.set(trunc_laps)
@@ -1718,6 +2022,8 @@ class TyreStrategyModule(ctk.CTkFrame):
             "soft_warmup": self._get_soft_warmup(),
             "soft_a": self._get_soft_a(),
             "soft_n": self._get_soft_n(),
+            "hard_model": self._model_dict("hard"),
+            "soft_model": self._model_dict("soft"),
             "active_model": self._var_selected_tyre_model.get(),
             "saved_models": list(self.saved_tyre_models.keys()),
         }

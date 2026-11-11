@@ -41,6 +41,7 @@ from matplotlib.ticker import FuncFormatter
 
 from modules.ui_responsive import ResponsiveGrid, WidthModes, ZoomAwareFigureCanvas, widget_scaling
 from modules.race_physics import saving_curve_from_rows, interpolate_saving_penalty, stint_saving
+from modules.race_physics import tyre_deg, tyre_model_from_data
 
 # Suprimir advertencias de glifos no disponibles en fuentes de matplotlib (ej. DejaVu Sans)
 warnings.filterwarnings("ignore", message=r".*missing from font.*")
@@ -1603,6 +1604,9 @@ class StrategyChartsModule(ctk.CTkFrame):
         s_warm = float(str(t_src.get("soft_warmup", 0.400)).replace(",", "."))
         s_a    = float(str(t_src.get("soft_a", 0.5318)).replace(",", "."))
         s_n    = float(str(t_src.get("soft_n", -0.3968)).replace(",", "."))
+        # Modelo de degradación elegido en Neumáticos (logarítmico, lineal o a tramos)
+        h_model = tyre_model_from_data(t_src, "hard", h_a, h_n)
+        s_model = tyre_model_from_data(t_src, "soft", s_a, s_n)
 
         # 1. Normalización de Tramos de Safety Car Multi-Tramo
         if sc_segments is None:
@@ -1750,8 +1754,7 @@ class StrategyChartsModule(ctk.CTkFrame):
 
                 base_p = h_base if comp == "hard" else s_base
                 warmup = h_warm if comp == "hard" else s_warm
-                a_val = h_a if comp == "hard" else s_a
-                n_val = h_n if comp == "hard" else s_n
+                deg_model = h_model if comp == "hard" else s_model
 
                 tyre_x = 0  # Vida del neumático en vueltas lanzadas
                 st_fuel_initial = curr_fuel
@@ -1781,7 +1784,7 @@ class StrategyChartsModule(ctk.CTkFrame):
                             t_deg = 0.0
                             t_pen_this = t_pen_draft if is_draft else t_pen_green
                         else:
-                            t_deg = max(0.0, a_val * math.log(tyre_x) + n_val)
+                            t_deg = tyre_deg(tyre_x, deg_model)
                             t_pen_this = t_pen_draft if is_draft else t_pen_green
 
                         t_green = base_p + t_deg + delta_peso + t_pen_this
@@ -1798,7 +1801,7 @@ class StrategyChartsModule(ctk.CTkFrame):
                             t_deg = 0.0
                             t_pen_this = t_pen_draft
                         else:
-                            t_deg = max(0.0, a_val * math.log(tyre_x) + n_val)
+                            t_deg = tyre_deg(tyre_x, deg_model)
                             t_pen_this = t_pen_draft
 
                         t_lap = base_p + t_deg + delta_peso + t_pen_this
@@ -1813,7 +1816,7 @@ class StrategyChartsModule(ctk.CTkFrame):
                             t_deg = 0.0
                             t_pen_this = t_pen_green
                         else:
-                            t_deg = max(0.0, a_val * math.log(tyre_x) + n_val)
+                            t_deg = tyre_deg(tyre_x, deg_model)
                             t_pen_this = t_pen_green
 
                         t_lap = base_p + t_deg + delta_peso + t_pen_this
