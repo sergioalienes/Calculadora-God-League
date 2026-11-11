@@ -59,6 +59,7 @@ import matplotlib.ticker as ticker
 from modules.race_physics import saving_curve_from_rows, interpolate_saving_penalty, stint_saving
 from modules.race_physics import (
     fit_tyre_model, tyre_deg, tyre_model_from_data, pw_zone_slopes, TYRE_MODEL_LABELS,
+    compound_comparison, undercut_series,
 )
 from modules.ui_responsive import (
     HeaderLayout, ResponsiveGrid, WidthModes, ZoomAwareFigureCanvas, bind_wraplength, widget_scaling,
@@ -294,6 +295,9 @@ class TyreStrategyModule(ctk.CTkFrame):
         # 2. Modelado de Neumáticos (Ritmo Base Vuelta 1, Calentamiento y Regresión OLS)
         self._build_regression_section()
 
+        # 2b. Comparativa Dura vs Blanda (ritmo, acumulado y poder de undercut)
+        self._build_compare_section()
+
         # 3. Control de Paradas Acotadas al Rango Viable y Asignación de Compuestos
         self._build_stints_and_tyres_section()
 
@@ -431,8 +435,8 @@ class TyreStrategyModule(ctk.CTkFrame):
         )
         e_tfuel.pack(side="left", padx=(8, 6))
         ctk.CTkLabel(f_t, text="(vacío = depósito lleno)", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=self.colors["text_secondary"]).pack(side="left")
-        e_tfuel.bind("<FocusOut>", lambda ev, c=compound: self._refresh_delta_labels(c))
-        e_tfuel.bind("<Return>", lambda ev, c=compound: self._refresh_delta_labels(c))
+        e_tfuel.bind("<FocusOut>", lambda ev, c=compound: (self._refresh_delta_labels(c), self._plot_compare()))
+        e_tfuel.bind("<Return>", lambda ev, c=compound: (self._refresh_delta_labels(c), self._plot_compare()))
         e_base.bind("<FocusOut>", lambda ev, c=compound: self._refresh_delta_labels(c), add="+")
 
         # Explicación de la función a tramos
@@ -752,6 +756,7 @@ class TyreStrategyModule(ctk.CTkFrame):
                 rows[idx]["time"] = round(t, 3)
             var.set(self._format_lap_time(rows[idx]["time"]))
         self._refresh_delta_labels(compound)
+        self._plot_compare()
 
     def _add_test_point(self, compound: str):
         self._ensure_laps(compound, force=True)
@@ -762,6 +767,7 @@ class TyreStrategyModule(ctk.CTkFrame):
         else:
             rows.append({"lap": 2, "time": round(self._base_lap(compound), 3)})
         self._render_test_points(compound)
+        self._plot_compare()
 
     def _delete_test_point(self, compound: str, idx: int):
         self._ensure_laps(compound, force=True)
@@ -769,6 +775,7 @@ class TyreStrategyModule(ctk.CTkFrame):
         if 0 <= idx < len(rows):
             rows.pop(idx)
             self._render_test_points(compound)
+            self._plot_compare()
 
     def _on_model_kind_changed(self, compound: str, label: str):
         """Cambia entre modelo logarítmico, lineal o a tramos y reajusta con las vueltas actuales."""
@@ -848,6 +855,359 @@ class TyreStrategyModule(ctk.CTkFrame):
             self._refresh_delta_labels(compound)
             self.recalculate_and_plot()
         return True
+
+    # ─── 2b. Comparativa de compuestos y poder de undercut ────
+    def _build_compare_section(self):
+        C = self.colors
+        self._cmp_key = None
+        self._var_uc_mine = ctk.StringVar(value="soft")    # tu goma nueva
+        self._var_uc_rival = ctk.StringVar(value="hard")   # goma usada del rival
+        self._var_uc_extra = ctk.StringVar(value="0")      # vueltas extra de uso del rival
+        self._var_uc_delay = ctk.StringVar(value="1")      # vueltas que tarda el rival en parar
+        self._var_uc_cold = ctk.BooleanVar(value=True)     # contar la pérdida por ruedas frías
+        f_title = ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
+        f_small = ctk.CTkFont(family="Segoe UI", size=11)
+        f_bold = ctk.CTkFont(family="Segoe UI", size=11, weight="bold")
+
+        # ── Tarjeta 1: ritmo por vuelta + tiempo acumulado ──
+        card = ctk.CTkFrame(self._scroll, fg_color=C["bg_secondary"], corner_radius=10,
+                            border_width=1, border_color=C["border"])
+        card.pack(fill="x", padx=32, pady=(0, 16))
+        ctk.CTkLabel(card, text="📊 COMPARATIVA DE COMPUESTOS · Dura vs Blanda", font=f_title,
+                     text_color=C["text_primary"], anchor="w").pack(fill="x", padx=20, pady=(14, 0))
+        sub = ctk.CTkLabel(
+            card, anchor="w", justify="left", font=f_small, text_color=C["text_secondary"],
+            text=("Tiempos solo por goma: los dos compuestos con la misma gasolina (depósito lleno), para que la "
+                  "comparación sea justa. Los puntos son las vueltas de tu stint de test, ya sin el efecto de la gasolina."))
+        sub.pack(fill="x", padx=20, pady=(2, 8))
+        bind_wraplength(sub, card, margin=44)
+
+        kpi_bar = ctk.CTkFrame(card, fg_color="transparent")
+        kpi_bar.pack(fill="x", padx=20, pady=(0, 8))
+        self._cmp_kpis = {}
+        kpi_cards = []
+        for key, title in (("pace", "⚡ Cruce de ritmo por vuelta"),
+                           ("cum", "⏱️ Cruce de tiempo acumulado"),
+                           ("max", "🏁 Ventaja máxima en el stint")):
+            kc = ctk.CTkFrame(kpi_bar, fg_color=C["bg_primary"], corner_radius=8, border_width=1, border_color=C["border"])
+            kpi_cards.append(kc)
+            ctk.CTkLabel(kc, text=title, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                         text_color=C["text_secondary"]).pack(anchor="w", padx=10, pady=(8, 0))
+            val = ctk.CTkLabel(kc, text="—", font=ctk.CTkFont(family="Segoe UI Mono", size=15, weight="bold"),
+                               text_color=C["accent"])
+            val.pack(anchor="w", padx=10)
+            det = ctk.CTkLabel(kc, text="", font=ctk.CTkFont(family="Segoe UI", size=10), anchor="w",
+                               justify="left", text_color=C["text_secondary"])
+            det.pack(fill="x", padx=10, pady=(0, 8))
+            bind_wraplength(det, kc, margin=24)
+            self._cmp_kpis[key] = (val, det)
+        self._cmp_kpi_grid = ResponsiveGrid(kpi_bar, kpi_cards, max_cols=3, min_col_width=230,
+                                            grid_kw=dict(padx=5, pady=3, sticky="nsew"))
+
+        plot_box = ctk.CTkFrame(card, fg_color=C["bg_primary"], corner_radius=8, border_width=1, border_color=C["border"])
+        plot_box.pack(fill="x", padx=20, pady=(0, 16))
+        self._cmp_fig = Figure(figsize=(9, 7.6), dpi=100, facecolor="#0E0E0E")
+        self._cmp_fig.set_layout_engine("tight", h_pad=2.0)
+        self._cmp_ax1 = self._cmp_fig.add_subplot(211)
+        self._cmp_ax2 = self._cmp_fig.add_subplot(212)
+        self._cmp_canvas = ZoomAwareFigureCanvas(self._cmp_fig, master=plot_box)
+        self._cmp_canvas.draw()
+        self._cmp_canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+
+        # ── Tarjeta 2: poder de undercut ──
+        uc = ctk.CTkFrame(self._scroll, fg_color=C["bg_secondary"], corner_radius=10,
+                          border_width=1, border_color=C["border"])
+        uc.pack(fill="x", padx=32, pady=(0, 16))
+        ctk.CTkLabel(uc, text="⚔️ PODER DE UNDERCUT", font=f_title, text_color=C["text_primary"],
+                     anchor="w").pack(fill="x", padx=20, pady=(14, 0))
+        sub2 = ctk.CTkLabel(
+            uc, anchor="w", justify="left", font=f_small, text_color=C["text_secondary"],
+            text=("Tú paras en la vuelta indicada y montas goma nueva; el rival sigue en pista con su goma usada. "
+                  "Positivo = ganas tiempo (el undercut funciona). Negativo = mejor quedarse fuera. "
+                  "Cuenta la goma (calentamiento y desgaste) y la gasolina (tú sales cargado, él va cada vez más ligero)."))
+        sub2.pack(fill="x", padx=20, pady=(2, 8))
+        bind_wraplength(sub2, uc, margin=44)
+
+        ctl = ctk.CTkFrame(uc, fg_color="transparent")
+        ctl.pack(fill="x", padx=20, pady=(0, 6))
+        seg_kw = dict(selected_color=C["accent"], selected_hover_color=C["accent_hover"],
+                      unselected_color=C["bg_primary"], unselected_hover_color=C["border"],
+                      text_color="#FFFFFF", font=f_bold)
+        comp_vals = ["🔴 Blanda", "⚪ Dura"]
+
+        def _comp_box(title, var, default):
+            box = ctk.CTkFrame(ctl, fg_color=C["bg_primary"], corner_radius=8, border_width=1, border_color=C["border"])
+            ctk.CTkLabel(box, text=title, font=f_bold, text_color=C["text_primary"]).pack(anchor="w", padx=10, pady=(8, 4))
+            seg = ctk.CTkSegmentedButton(
+                box, values=comp_vals,
+                command=lambda v, vr=var: (vr.set("soft" if "Blanda" in v else "hard"), self._plot_compare()), **seg_kw)
+            seg.set(default)
+            seg.pack(fill="x", padx=10, pady=(0, 8))
+            return box
+
+        b1 = _comp_box("Tu rueda nueva", self._var_uc_mine, comp_vals[0])
+        b2 = _comp_box("Rueda usada del rival", self._var_uc_rival, comp_vals[1])
+
+        b3 = ctk.CTkFrame(ctl, fg_color=C["bg_primary"], corner_radius=8, border_width=1, border_color=C["border"])
+        ctk.CTkLabel(b3, text="Vueltas extra de uso del rival", font=f_bold, text_color=C["text_primary"]).pack(anchor="w", padx=10, pady=(8, 4))
+        r3 = ctk.CTkFrame(b3, fg_color="transparent")
+        r3.pack(fill="x", padx=10, pady=(0, 8))
+        e_extra = ctk.CTkEntry(r3, textvariable=self._var_uc_extra, width=60, height=28, justify="center",
+                               font=ctk.CTkFont(family="Segoe UI Mono", size=12, weight="bold"),
+                               fg_color=C["input_bg"], border_color=C["border"])
+        e_extra.pack(side="left")
+        ctk.CTkLabel(r3, text="0 = su goma tiene las vueltas de carrera", font=ctk.CTkFont(family="Segoe UI", size=10),
+                     text_color=C["text_secondary"]).pack(side="left", padx=(8, 0))
+        e_extra.bind("<FocusOut>", lambda ev: self._plot_compare())
+        e_extra.bind("<Return>", lambda ev: self._plot_compare())
+
+        b4 = ctk.CTkFrame(ctl, fg_color=C["bg_primary"], corner_radius=8, border_width=1, border_color=C["border"])
+        ctk.CTkLabel(b4, text="El rival para (vueltas después de ti)", font=f_bold, text_color=C["text_primary"]).pack(anchor="w", padx=10, pady=(8, 4))
+        delay_vals = ["+1 vuelta", "+2 vueltas", "+3 vueltas"]
+        seg_d = ctk.CTkSegmentedButton(
+            b4, values=delay_vals,
+            command=lambda v: (self._var_uc_delay.set(v.split()[0].lstrip("+")), self._plot_compare()), **seg_kw)
+        seg_d.set(delay_vals[0])
+        seg_d.pack(fill="x", padx=10, pady=(0, 8))
+
+        self._uc_ctl_grid = ResponsiveGrid(ctl, [b1, b2, b3, b4], max_cols=4, min_col_width=250,
+                                           grid_kw=dict(padx=5, pady=3, sticky="nsew"))
+
+        ctk.CTkSwitch(
+            uc, text="Contar la pérdida por ruedas frías en tu vuelta de salida", variable=self._var_uc_cold,
+            command=self._plot_compare, font=f_bold, text_color=C["text_primary"],
+            progress_color=C["accent"], button_color="#FFFFFF", button_hover_color="#DDDDDD",
+        ).pack(anchor="w", padx=26, pady=(2, 4))
+
+        self._lbl_uc_summary = ctk.CTkLabel(uc, text="", anchor="w", justify="left", font=f_bold, text_color=C["accent"])
+        self._lbl_uc_summary.pack(fill="x", padx=20, pady=(2, 8))
+        bind_wraplength(self._lbl_uc_summary, uc, margin=44)
+
+        uc_box = ctk.CTkFrame(uc, fg_color=C["bg_primary"], corner_radius=8, border_width=1, border_color=C["border"])
+        uc_box.pack(fill="x", padx=20, pady=(0, 16))
+        self._uc_fig = Figure(figsize=(9, 3.9), dpi=100, facecolor="#0E0E0E")
+        self._uc_fig.set_layout_engine("tight")
+        self._uc_ax = self._uc_fig.add_subplot(111)
+        self._uc_canvas = ZoomAwareFigureCanvas(self._uc_fig, master=uc_box)
+        self._uc_canvas.draw()
+        self._uc_canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+
+    def _compound_params(self, compound: str) -> dict:
+        is_hard = (compound == "hard")
+        return {
+            "base": self._base_lap(compound),
+            "warmup": self._get_hard_warmup() if is_hard else self._get_soft_warmup(),
+            "model": self._model_dict(compound),
+        }
+
+    def _model_equation(self, compound: str) -> str:
+        """Ecuación del modelo en texto (t = tiempo de vuelta, x = vuelta del stint − 1)."""
+        m = self._model_dict(compound)
+        base = self._format_lap_time(self._base_lap(compound))
+        name = "Dura" if compound == "hard" else "Blanda"
+        r2 = self._var_for(compound, "r2").get()
+        if m["kind"] == "pw":
+            s1, s2, s3 = pw_zone_slopes(m)
+            v1, v2 = int(round(m["b1"])) + 1, int(round(m["b2"])) + 1
+            body = f"{base} + tramos: {s1:+.3f} s/v hasta V{v1} · {s2:+.3f} s/v hasta V{v2} · {s3:+.3f} s/v después"
+        else:
+            fx = "ln(x)" if m["kind"] == "log" else "x"
+            body = f"{base} + {m['a']:.4f}·{fx} {'+' if m['n'] >= 0 else '−'} {abs(m['n']):.4f}"
+        return f"{name}:  t = {body}    (R² {r2})"
+
+    @staticmethod
+    def _style_axes(ax):
+        ax.set_facecolor("#141414")
+        ax.grid(True, color="#222222", linestyle=":", linewidth=0.8)
+        for spine in ax.spines.values():
+            spine.set_color("#2E2E2E")
+        ax.tick_params(colors="#888888", labelsize=8.5)
+        ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True, nbins=20))
+
+    def _plot_compare(self):
+        """Pinta las gráficas de comparativa (ritmo, acumulado) y la de poder de undercut."""
+        if getattr(self, "_uc_canvas", None) is None:
+            return
+        tank, cons, sens = self._fuel_ctx()
+        total_laps = int(self._var_total_laps.get())
+        safety = float(self.fuel_data.get("safety_fuel_l") or self.fuel_data.get("calc_results", {}).get("safety_fuel_l", 2.5))
+        hard, soft = self._compound_params("hard"), self._compound_params("soft")
+        pts = {}
+        for comp in ("hard", "soft"):
+            pts[comp] = [(int(r["lap"]), self._base_lap(comp) + self._tyre_delta(comp, int(r["lap"]), float(r["time"])))
+                         for r in self._display_laps(comp)]
+        try:
+            extra = max(0, int(float(self._var_uc_extra.get().replace(",", ".") or 0)))
+        except ValueError:
+            extra = 0
+        self._var_uc_extra.set(str(extra))
+        delay = int(self._var_uc_delay.get() or 1)
+        mine, rival = self._var_uc_mine.get(), self._var_uc_rival.get()
+
+        cold = bool(self._var_uc_cold.get())
+        key = repr((hard, soft, pts, tank, cons, sens, total_laps, safety, extra, delay, mine, rival, cold,
+                    self._var_hard_r2.get(), self._var_soft_r2.get()))
+        if key == self._cmp_key:
+            return
+        self._cmp_key = key
+
+        HARD_C, SOFT_C, ACC = "#FFFFFF", "#FF3B30", "#F26419"
+        names = {"hard": "dura", "soft": "blanda"}
+        fmt_t = ticker.FuncFormatter(lambda v, _p: self._format_lap_time(v))
+
+        # Vueltas a mostrar: lo que da un depósito (o las vueltas del test si son más)
+        tank_laps = int(tank // cons) if cons > 0 else 20
+        data_max = max([lp for c in pts for lp, _ in pts[c]] or [0])
+        n = max(8, min(60, max(tank_laps, data_max)))
+        cmp_ = compound_comparison(n, hard, soft)
+        far = compound_comparison(max(n, 100), hard, soft)   # para avisar de cruces más allá del depósito
+        laps = cmp_["laps"]
+
+        # ── Gráfica 1: tiempo por vuelta ──
+        ax = self._cmp_ax1
+        ax.clear()
+        self._style_axes(ax)
+        ax.plot(laps, cmp_["hard"], color=HARD_C, linewidth=2.4, marker="o", markersize=3.5, label="Dura (modelo)")
+        ax.plot(laps, cmp_["soft"], color=SOFT_C, linewidth=2.4, marker="o", markersize=3.5, label="Blanda (modelo)")
+        for comp, col in (("hard", HARD_C), ("soft", SOFT_C)):
+            if pts[comp]:
+                ax.scatter([a for a, _ in pts[comp]], [b for _, b in pts[comp]], s=34, facecolors="none",
+                           edgecolors=col, linewidths=1.3, alpha=0.9, zorder=4,
+                           label=f"Vueltas del test ({names[comp]})")
+        pc = cmp_["pace_cross"]
+        if pc is not None:
+            ax.axvline(pc, color=ACC, linestyle="--", linewidth=1.6, alpha=0.9)
+            ax.annotate(f"Cruce de ritmo\nV{pc:.1f}", xy=(pc, 0.97), xycoords=("data", "axes fraction"),
+                        xytext=(6, 0), textcoords="offset points", va="top", color="#FFA94D", fontsize=8.5,
+                        fontweight="bold", bbox=dict(boxstyle="round,pad=0.3", fc="#201005", ec=ACC, lw=1))
+        ax.text(0.0, 1.20, "1 · Tiempo por vuelta de cada compuesto", transform=ax.transAxes, color="#FFFFFF",
+                fontsize=11, fontweight="bold", va="bottom")
+        ax.text(0.0, 1.105, self._model_equation("hard"), transform=ax.transAxes, color=HARD_C,
+                fontsize=9, va="bottom", family="monospace")
+        ax.text(0.0, 1.02, self._model_equation("soft"), transform=ax.transAxes, color=SOFT_C,
+                fontsize=9, va="bottom", family="monospace")
+        ax.set_xlabel("Vuelta del stint  (x = vuelta − 1 · V1 = salida con gomas frías)", color="#A0A0A0", fontsize=9.5, labelpad=6)
+        ax.set_ylabel("Tiempo de vuelta", color="#A0A0A0", fontsize=9.5, labelpad=8)
+        ax.set_xlim(0.5, n + 0.5)
+        ax.yaxis.set_major_formatter(fmt_t)
+        ax.legend(facecolor="#181818", edgecolor="#333333", labelcolor="#FFFFFF", fontsize=8, loc="best", ncols=2)
+
+        # ── Gráfica 2: acumulado dura − acumulado blanda ──
+        ax = self._cmp_ax2
+        ax.clear()
+        self._style_axes(ax)
+        cum = np.array(cmp_["cum_diff"])
+        xs = np.array(laps, dtype=float)
+        ax.axhline(0.0, color="#888888", linewidth=1.0)
+        ax.fill_between(xs, 0.0, cum, where=cum >= 0, interpolate=True, color=SOFT_C, alpha=0.22)
+        ax.fill_between(xs, 0.0, cum, where=cum <= 0, interpolate=True, color=HARD_C, alpha=0.18)
+        ax.plot(xs, cum, color=ACC, linewidth=2.4, marker="o", markersize=3.5)
+        cc = cmp_["cum_cross"]
+        if cc is not None:
+            ax.axvline(cc, color=ACC, linestyle="--", linewidth=1.6, alpha=0.9)
+            ax.plot([cc], [0.0], marker="D", color="#FFA94D", markersize=7, zorder=5)
+            ax.annotate(f"Cruce acumulado\nV{cc:.1f}", xy=(cc, 0.0), xytext=(8, 14), textcoords="offset points",
+                        color="#FFA94D", fontsize=8.5, fontweight="bold",
+                        bbox=dict(boxstyle="round,pad=0.3", fc="#201005", ec=ACC, lw=1))
+        ax.set_title("2 · Tiempo acumulado: dura − blanda  (por encima de 0 la blanda va por delante; por debajo, la dura)",
+                     color="#FFFFFF", fontsize=10.5, fontweight="bold", loc="left", pad=10)
+        ax.set_xlabel("Vuelta del stint", color="#A0A0A0", fontsize=9.5, labelpad=6)
+        ax.set_ylabel("Acum. dura − acum. blanda (s)", color="#A0A0A0", fontsize=9.5, labelpad=8)
+        ax.set_xlim(0.5, n + 0.5)
+
+        # ── Tarjetas resumen ──
+        def faster_after(series_h, series_s, cross):
+            i = min(len(series_h) - 1, int(math.floor(cross)))   # primera vuelta completa tras el cruce
+            return "dura" if series_h[i] < series_s[i] else "blanda"
+
+        v, d = self._cmp_kpis["pace"]
+        fp = far["pace_cross"]
+        if fp is None:
+            quick = "blanda" if far["soft"][1] < far["hard"][1] else "dura"
+            v.configure(text="Sin cruce")
+            d.configure(text=f"La {quick} es más rápida por vuelta durante todo el stint.")
+        else:
+            who = faster_after(far["hard"], far["soft"], fp)
+            v.configure(text=f"V{fp:.1f}")
+            d.configure(text=f"Desde esa vuelta la {who} es más rápida por vuelta."
+                        + ("" if fp <= n else " (Más allá de lo que da un depósito.)"))
+
+        v, d = self._cmp_kpis["cum"]
+        fc = far["cum_cross"]
+        if fc is None:
+            ahead = "blanda" if far["cum_diff"][min(n, len(far["cum_diff"])) - 1] > 0 else "dura"
+            v.configure(text="Sin cruce")
+            d.configure(text=f"El stint con {ahead} es más rápido en total a cualquier duración.")
+        else:
+            i = min(len(far["cum_diff"]) - 1, int(math.floor(fc)))
+            who = "blanda" if far["cum_diff"][i] > 0 else "dura"
+            v.configure(text=f"V{fc:.1f}")
+            d.configure(text=f"Un stint más largo que eso es más rápido en total con {who}."
+                        + ("" if fc <= n else " (Más allá de lo que da un depósito.)"))
+
+        v, d = self._cmp_kpis["max"]
+        i_max = int(np.argmax(np.abs(cum)))
+        who = "Blanda" if cum[i_max] > 0 else "Dura"
+        v.configure(text=f"{who} +{abs(cum[i_max]):.2f} s")
+        d.configure(text=f"Mayor ventaja acumulada, en la vuelta {laps[i_max]} del stint.")
+
+        # ── Gráfica 3: poder de undercut ──
+        ax = self._uc_ax
+        ax.clear()
+        self._style_axes(ax)
+        P = {"hard": hard, "soft": soft}
+        # Goma nueva: con o sin la pérdida de calentamiento de la vuelta de salida
+        N = P if cold else {c: dict(P[c], warmup=0.0) for c in P}
+        kw = dict(tank=tank, cons=cons, sens=sens, total_laps=total_laps, rival_extra_age=extra,
+                  rival_delay=delay, safety_fuel=safety)
+        ul, ug = undercut_series(N[mine], P[rival], **kw)
+        ax.axhline(0.0, color="#888888", linewidth=1.0)
+        if ul:
+            g = np.array(ug)
+            x = np.array(ul, dtype=float)
+            ax.fill_between(x, 0.0, g, where=g >= 0, interpolate=True, color="#51CF66", alpha=0.20)
+            ax.fill_between(x, 0.0, g, where=g <= 0, interpolate=True, color="#FF6B6B", alpha=0.14)
+            ax.plot(x, g, color=ACC, linewidth=2.6, marker="o", markersize=3.5,
+                    label=f"Tú {names[mine]} nueva · rival {names[rival]} usada")
+            if mine != rival:
+                ol, og = undercut_series(N[rival], P[mine], **kw)
+                ax.plot(ol, og, color="#9A9A9A", linewidth=1.6, linestyle="--",
+                        label=f"Al revés: tú {names[rival]} nueva · rival {names[mine]} usada")
+            ax.set_xlim(0.5, ul[-1] + 0.5)
+            ax.legend(facecolor="#181818", edgecolor="#333333", labelcolor="#FFFFFF", fontsize=8.5, loc="best")
+
+            good = [l for l, val in zip(ul, ug) if val > 0]
+            i_best = int(np.argmax(g))
+            if not good:
+                txt = (f"Con estos datos el undercut no funciona en ninguna vuelta: pierdes como mínimo "
+                       f"{abs(g[i_best]):.2f} s (V{ul[i_best]}). Mejor quedarse fuera (overcut).")
+            elif len(good) == len(ul):
+                txt = f"El undercut funciona en cualquier vuelta. Máximo: +{g[i_best]:.2f} s parando en V{ul[i_best]}."
+            else:
+                runs, start, prev = [], good[0], good[0]
+                for l in good[1:]:
+                    if l != prev + 1:
+                        runs.append((start, prev))
+                        start = l
+                    prev = l
+                runs.append((start, prev))
+                rng = ", ".join(f"V{a}" if a == b else f"V{a}–V{b}" for a, b in runs)
+                txt = (f"El undercut funciona si paras en {rng} (máximo +{g[i_best]:.2f} s en V{ul[i_best]}). "
+                       f"En el resto de vueltas es mejor quedarse fuera.")
+            self._lbl_uc_summary.configure(text=txt)
+        else:
+            self._lbl_uc_summary.configure(text="Faltan datos de combustible para calcular el undercut.")
+        when = "la vuelta siguiente" if delay == 1 else f"las {delay} vueltas siguientes"
+        ax.set_title(f"3 · Poder de undercut: tiempo ganado al rival en {when} a tu parada",
+                     color="#FFFFFF", fontsize=10.5, fontweight="bold", loc="left", pad=10)
+        ax.set_xlabel("Vuelta de carrera en la que paras", color="#A0A0A0", fontsize=9.5, labelpad=6)
+        ax.set_ylabel("Ganancia (s) · positivo = funciona", color="#A0A0A0", fontsize=9.5, labelpad=8)
+
+        if self.winfo_viewable():
+            self._cmp_canvas.draw_idle()
+            self._uc_canvas.draw_idle()
+        else:
+            self._plot_pending_draw = True
 
     # ─── 3. Control de Paradas y Asignación de Compuestos ─────
     def _build_stints_and_tyres_section(self):
@@ -1197,10 +1557,15 @@ class TyreStrategyModule(ctk.CTkFrame):
         self._plot_pending_draw = False
         tk.Misc.bind(self, "<Map>", self._on_plot_mapped, "+")
 
+    def _all_canvases(self) -> list:
+        return [c for c in (getattr(self, "_mpl_canvas", None), getattr(self, "_cmp_canvas", None),
+                            getattr(self, "_uc_canvas", None)) if c is not None]
+
     def _on_plot_mapped(self, _event=None):
         if self._plot_pending_draw and self._mpl_canvas:
             self._plot_pending_draw = False
-            self._mpl_canvas.draw_idle()
+            for canvas in self._all_canvases():
+                canvas.draw_idle()
 
     # ═══════════════════════════════════════════════════════════
     #  CÁLCULO DE LA CARRERA Y RENDERIZADO DEL GRÁFICO
@@ -1571,6 +1936,9 @@ class TyreStrategyModule(ctk.CTkFrame):
 
         self._ax.legend(facecolor="#181818", edgecolor="#333333", labelcolor="#FFFFFF", fontsize=8.5, loc="upper left")
 
+        # Comparativa de compuestos y undercut (solo se repinta si cambian sus datos)
+        self._plot_compare()
+
         # tight_layout lo aplica el motor de la figura al renderizar (ver _build_chart_section)
         if self._mpl_canvas:
             if self.winfo_viewable():
@@ -1912,8 +2280,9 @@ class TyreStrategyModule(ctk.CTkFrame):
 
     def on_ui_zoom_changed(self):
         """Llamado por main.py tras cambiar el zoom de interfaz: re-escala el gráfico."""
-        if getattr(self, "_mpl_canvas", None) is not None and hasattr(self._mpl_canvas, "refresh_ui_scaling"):
-            self._mpl_canvas.refresh_ui_scaling()
+        for canvas in self._all_canvases():
+            if hasattr(canvas, "refresh_ui_scaling"):
+                canvas.refresh_ui_scaling()
 
     def on_session_data_updated(self, session_data: dict):
         """Callback cuando cambian los datos de campeonato o circuito."""

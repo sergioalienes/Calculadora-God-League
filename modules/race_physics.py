@@ -197,3 +197,98 @@ def pw_zone_slopes(model: dict) -> tuple[float, float, float]:
     """Pendientes (s/vuelta) de las zonas peak, mid y cliff de un modelo a tramos."""
     s1 = model["s1"]
     return s1, s1 + model["d2"], s1 + model["d2"] + model["d3"]
+
+
+# ═══════════════════════════════════════════════════════════════
+#  COMPARATIVA DE COMPUESTOS: CRUCES Y PODER DE UNDERCUT
+# ═══════════════════════════════════════════════════════════════
+
+def stint_lap_time(x: int, base: float, warmup: float, model: dict) -> float:
+    """Tiempo de vuelta solo por goma (a depósito lleno): x = vuelta del stint − 1."""
+    if x <= 0:
+        return base + warmup
+    if x == 1:
+        return base
+    return base + tyre_deg(x, model)
+
+
+def first_zero_crossing(xs, ys, start: int = 0):
+    """
+    Primer punto (x interpolado linealmente) en el que la serie ys cambia de signo
+    a partir del índice 'start'. Devuelve None si no hay cambio de signo.
+    """
+    prev_i = None
+    for i in range(start, len(ys)):
+        if abs(ys[i]) < 1e-12:
+            if prev_i is not None:
+                return float(xs[i])
+            continue
+        if prev_i is not None and (ys[prev_i] > 0) != (ys[i] > 0):
+            x0, x1, y0, y1 = xs[prev_i], xs[i], ys[prev_i], ys[i]
+            return float(x0 + (x1 - x0) * (0.0 - y0) / (y1 - y0))
+        prev_i = i
+    return None
+
+
+def compound_comparison(n_laps: int, hard: dict, soft: dict) -> dict:
+    """
+    Compara un stint de dura con uno de blanda vuelta a vuelta, con la misma gasolina
+    (el efecto peso es igual para los dos y se anula en la diferencia).
+      hard / soft = {"base": s, "warmup": s, "model": modelo de degradación}
+    Devuelve:
+      laps        vueltas del stint 1..n
+      hard, soft  tiempo de vuelta de cada compuesto (solo goma)
+      cum_diff    acumulado dura − acumulado blanda (positivo = la blanda va por delante)
+      pace_cross  vuelta (decimal) en la que cambia el compuesto más rápido por vuelta
+      cum_cross   vuelta (decimal) en la que el acumulado se iguala
+    """
+    n_laps = max(2, int(n_laps))
+    laps = list(range(1, n_laps + 1))
+    th = [stint_lap_time(l - 1, hard["base"], hard["warmup"], hard["model"]) for l in laps]
+    ts = [stint_lap_time(l - 1, soft["base"], soft["warmup"], soft["model"]) for l in laps]
+    cum, acc = [], 0.0
+    for a, b in zip(th, ts):
+        acc += a - b
+        cum.append(acc)
+    lap_diff = [a - b for a, b in zip(th, ts)]
+    return {
+        "laps": laps, "hard": th, "soft": ts, "cum_diff": cum,
+        # La vuelta de salida (gomas frías) no cuenta para el cruce de ritmo
+        "pace_cross": first_zero_crossing(laps, lap_diff, start=1),
+        "cum_cross": first_zero_crossing(laps, cum, start=0),
+    }
+
+
+def undercut_series(new: dict, old: dict, *, tank: float, cons: float, sens: float,
+                    total_laps: int, rival_extra_age: int = 0, rival_delay: int = 1,
+                    safety_fuel: float = 0.0) -> tuple[list[int], list[float]]:
+    """
+    Poder de undercut para cada vuelta de parada L (tú paras al final de la vuelta L y el
+    rival 'rival_delay' vueltas después). Valor = tiempo del rival − tu tiempo, sumado en
+    las vueltas en las que tú ya llevas goma nueva y él sigue en pista:
+        positivo = el undercut funciona (ganas tiempo), negativo = mejor quedarse fuera.
+      new = tu goma nueva   {"base", "warmup", "model"}
+      old = goma del rival  {"base", "warmup", "model"}, con L + rival_extra_age vueltas de uso
+    Gasolina: los dos salieron con el depósito lleno; el rival sigue quemando (cada vez más
+    ligero) y tú sales con lo necesario para acabar la carrera (máximo, el depósito).
+    El tiempo en boxes es el mismo para los dos y no entra en la comparación.
+    """
+    if cons <= 0:
+        return [], []
+    rival_delay = max(1, int(rival_delay))
+    laps, gains = [], []
+    max_stop = int(math.floor((tank - safety_fuel) / cons + 1e-9)) - rival_delay
+    max_stop = min(max_stop, int(total_laps) - rival_delay)
+    for L in range(1, max_stop + 1):
+        fuel_after = min(tank, (total_laps - L) * cons + safety_fuel)
+        gain = 0.0
+        for k in range(1, rival_delay + 1):
+            my_fuel = max(0.0, fuel_after - (k - 1) * cons)
+            my_t = stint_lap_time(k - 1, new["base"], new["warmup"], new["model"]) + (my_fuel - tank) * sens
+            rv_fuel = max(0.0, tank - (L + k - 1) * cons)
+            rv_x = L + k - 1 + max(0, int(rival_extra_age))
+            rv_t = stint_lap_time(rv_x, old["base"], old["warmup"], old["model"]) + (rv_fuel - tank) * sens
+            gain += rv_t - my_t
+        laps.append(L)
+        gains.append(gain)
+    return laps, gains
