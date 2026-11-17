@@ -259,34 +259,88 @@ def compound_comparison(n_laps: int, hard: dict, soft: dict) -> dict:
     }
 
 
-def undercut_series(new: dict, old: dict, *, tank: float, cons: float, sens: float,
-                    total_laps: int, rival_extra_age: int = 0, rival_delay: int = 1,
-                    safety_fuel: float = 0.0) -> tuple[list[int], list[float]]:
+def undercut_window(*, tank: float, cons: float, safety_fuel: float = 0.0, start_fuel: float | None = None,
+                    rival_extra_age: int = 0, rival_delay: int = 1, margin: int = 4,
+                    lap_from: int | None = None, lap_to: int | None = None) -> dict:
     """
-    Poder de undercut para cada vuelta de parada L (tú paras al final de la vuelta L y el
-    rival 'rival_delay' vueltas después). Valor = tiempo del rival − tu tiempo, sumado en
-    las vueltas en las que tú ya llevas goma nueva y él sigue en pista:
+    Ventana de vueltas de stint en las que tiene sentido parar.
+      n_std      vueltas que da la gasolina del stint con consumo estándar (sin ahorrar)
+      lmax       última vuelta posible ahorrando el máximo (20 %)
+      l_norm     última vuelta sin necesidad de ahorrar. El rival hace L + delay + extra
+                 vueltas, así que es la que más gasolina exige de los dos
+      auto_*     ventana automática: n_std ± margin, acotada por lmax
+      lo, hi     ventana final: la automática, o la manual (lap_from, lap_to) acotada a [1, lmax]
+    """
+    start = tank if start_fuel is None else max(0.0, min(tank, float(start_fuel)))
+    usable = max(0.0, start - safety_fuel)
+    delay, extra = max(1, int(rival_delay)), max(0, int(rival_extra_age))
+    if cons <= 0:
+        return dict(n_std=0, lmax=0, l_norm=0, auto_from=1, auto_to=0, lo=1, hi=0, manual=False,
+                    clamped=False, usable=usable, delay=delay, extra=extra, cons=cons)
+    n_std = int(math.floor(usable / cons + 1e-9))
+    lmax = int(math.floor(usable / (cons * (1.0 - MAX_SAVING_FRACTION)) + 1e-9)) - delay - extra
+    l_norm = n_std - delay - extra
+    auto_from = max(1, n_std - int(margin))
+    auto_to = min(lmax, n_std + int(margin))
+    lo, hi, manual, clamped = auto_from, auto_to, False, False
+    if lap_from is not None and lap_to is not None:
+        manual = True
+        lo, hi = sorted((int(lap_from), int(lap_to)))
+        if hi > lmax or lo < 1:
+            clamped = True
+        lo, hi = max(1, lo), min(hi, lmax)
+    return dict(n_std=n_std, lmax=lmax, l_norm=l_norm, auto_from=auto_from, auto_to=auto_to, lo=lo, hi=hi,
+                manual=manual, clamped=clamped, usable=usable, delay=delay, extra=extra, cons=cons)
+
+
+def undercut_saving(L: int, win: dict) -> float:
+    """Fracción de ahorro de gasolina (0..0.2) que exige parar en la vuelta L de stint (0 = no hace falta)."""
+    needed = (L + win["delay"] + win["extra"]) * win["cons"]
+    if needed <= 0 or needed <= win["usable"] + 1e-9:
+        return 0.0
+    return max(0.0, 1.0 - win["usable"] / needed)
+
+
+def undercut_series(new: dict, old: dict, *, tank: float, cons: float, sens: float,
+                    fuel_after: float | None = None, rival_extra_age: int = 0, rival_delay: int = 1,
+                    safety_fuel: float = 0.0, start_fuel: float | None = None, margin: int = 4,
+                    lap_from: int | None = None, lap_to: int | None = None) -> tuple[list[int], list[float]]:
+    """
+    Poder de undercut para cada vuelta de STINT L en la que paras (paras al final de tu
+    vuelta L del stint y el rival 'rival_delay' vueltas después). Vale para cualquier stint
+    de la carrera: no depende de la vuelta de carrera ni de las vueltas que queden.
+    Solo se calcula en la ventana de undercut_window(): por defecto, las vueltas que da el
+    depósito con consumo estándar ± 4 (o la ventana manual lap_from..lap_to).
+    Valor = tiempo del rival − tu tiempo, sumado en las vueltas en las que tú ya llevas
+    goma nueva y él sigue en pista:
         positivo = el undercut funciona (ganas tiempo), negativo = mejor quedarse fuera.
       new = tu goma nueva   {"base", "warmup", "model"}
       old = goma del rival  {"base", "warmup", "model"}, con L + rival_extra_age vueltas de uso
-    Gasolina: los dos salieron con el depósito lleno; el rival sigue quemando (cada vez más
-    ligero) y tú sales con lo necesario para acabar la carrera (máximo, el depósito).
+    Gasolina:
+      - El stint empezó con 'start_fuel' litros (None = depósito lleno), igual para los dos.
+        El rival lleva L + rival_extra_age vueltas quemando: las vueltas extra de uso de su
+        goma son también vueltas extra de consumo, así que va más ligero que tú.
+      - Tú sales del box con 'fuel_after' litros (None = depósito lleno).
+      - Las paradas que exigen ahorrar gasolina se calculan con el consumo estándar: no se
+        incluye ni el efecto en peso del ahorro ni la pérdida de tiempo por ahorrar.
     El tiempo en boxes es el mismo para los dos y no entra en la comparación.
     """
     if cons <= 0:
         return [], []
-    rival_delay = max(1, int(rival_delay))
+    win = undercut_window(tank=tank, cons=cons, safety_fuel=safety_fuel, start_fuel=start_fuel,
+                          rival_extra_age=rival_extra_age, rival_delay=rival_delay, margin=margin,
+                          lap_from=lap_from, lap_to=lap_to)
+    delay, extra = win["delay"], win["extra"]
+    start = tank if start_fuel is None else max(0.0, min(tank, float(start_fuel)))
+    fuel_after = tank if fuel_after is None else max(0.0, min(tank, float(fuel_after)))
     laps, gains = [], []
-    max_stop = int(math.floor((tank - safety_fuel) / cons + 1e-9)) - rival_delay
-    max_stop = min(max_stop, int(total_laps) - rival_delay)
-    for L in range(1, max_stop + 1):
-        fuel_after = min(tank, (total_laps - L) * cons + safety_fuel)
+    for L in range(win["lo"], win["hi"] + 1):
         gain = 0.0
-        for k in range(1, rival_delay + 1):
+        for k in range(1, delay + 1):
             my_fuel = max(0.0, fuel_after - (k - 1) * cons)
             my_t = stint_lap_time(k - 1, new["base"], new["warmup"], new["model"]) + (my_fuel - tank) * sens
-            rv_fuel = max(0.0, tank - (L + k - 1) * cons)
-            rv_x = L + k - 1 + max(0, int(rival_extra_age))
+            rv_x = L + k - 1 + extra                 # vueltas de uso de su goma = vueltas quemando
+            rv_fuel = max(0.0, start - rv_x * cons)
             rv_t = stint_lap_time(rv_x, old["base"], old["warmup"], old["model"]) + (rv_fuel - tank) * sens
             gain += rv_t - my_t
         laps.append(L)

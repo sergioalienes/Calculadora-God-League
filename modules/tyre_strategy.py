@@ -59,7 +59,7 @@ import matplotlib.ticker as ticker
 from modules.race_physics import saving_curve_from_rows, interpolate_saving_penalty, stint_saving
 from modules.race_physics import (
     fit_tyre_model, tyre_deg, tyre_model_from_data, pw_zone_slopes, TYRE_MODEL_LABELS,
-    compound_comparison, undercut_series,
+    compound_comparison, undercut_series, undercut_window, undercut_saving,
 )
 from modules.ui_responsive import (
     HeaderLayout, ResponsiveGrid, WidthModes, ZoomAwareFigureCanvas, bind_wraplength, widget_scaling,
@@ -134,6 +134,16 @@ class TyreStrategyModule(ctk.CTkFrame):
         self._pw_params: dict[str, dict | None] = {"hard": None, "soft": None}
         self._delta_labels: dict[str, list] = {"hard": [], "soft": []}
         self._model_widgets: dict[str, dict] = {"hard": {}, "soft": {}}
+
+        # ── Borrador automático ───────────────────────────────────
+        # Cada cambio (vueltas, tiempos, modelo, ritmo base…) se guarda al momento en
+        # <circuito>_tyres.json con "draft": true. Al reabrir la app se recupera el
+        # borrador aunque no se haya pulsado «Guardar». «Guardar» lo convierte en modelo.
+        self._clean_data: dict | None = None   # estado guardado de referencia (None = sin referencia)
+        self._last_draft_key: str | None = None
+        self._draft_on_disk = False
+        self._loading = 0
+        self._active_model_name = "⚡ Modelo Base"
 
         # ── Asignación de compuestos por stint ────────────────────
         self._var_stint1_tyre = ctk.StringVar(value="soft")  # "soft" o "hard"
@@ -230,6 +240,11 @@ class TyreStrategyModule(ctk.CTkFrame):
             command=self._on_tyre_model_selected,
         )
         self._cbo_tyre_models.pack(side="left", padx=(0, 8))
+        self._lbl_dirty = ctk.CTkLabel(
+            btn_box, text="", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+            text_color="#FFA94D",
+        )
+        self._lbl_dirty.pack(side="left", padx=(0, 8), before=self._cbo_tyre_models)
 
         self._btn_save_tyres = ctk.CTkButton(
             btn_box,
@@ -865,6 +880,11 @@ class TyreStrategyModule(ctk.CTkFrame):
         self._var_uc_extra = ctk.StringVar(value="0")      # vueltas extra de uso del rival
         self._var_uc_delay = ctk.StringVar(value="1")      # vueltas que tarda el rival en parar
         self._var_uc_cold = ctk.BooleanVar(value=True)     # contar la pérdida por ruedas frías
+        self._var_uc_fuel = ctk.StringVar(value="")        # litros con los que sales del box (vacío = lleno)
+        self._var_uc_start = ctk.StringVar(value="")       # litros con los que empezó el stint (vacío = lleno)
+        self._var_uc_from = ctk.StringVar(value="")        # ventana de parada: desde la vuelta…
+        self._var_uc_to = ctk.StringVar(value="")          # …hasta la vuelta
+        self._uc_manual = False                            # False = ventana automática (N ± 4)
         f_title = ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
         f_small = ctk.CTkFont(family="Segoe UI", size=11)
         f_bold = ctk.CTkFont(family="Segoe UI", size=11, weight="bold")
@@ -922,7 +942,9 @@ class TyreStrategyModule(ctk.CTkFrame):
                      anchor="w").pack(fill="x", padx=20, pady=(14, 0))
         sub2 = ctk.CTkLabel(
             uc, anchor="w", justify="left", font=f_small, text_color=C["text_secondary"],
-            text=("Tú paras en la vuelta indicada y montas goma nueva; el rival sigue en pista con su goma usada. "
+            text=("Tú paras en la vuelta de stint indicada y montas goma nueva; el rival sigue en pista con su goma usada. "
+                  "Vale para cualquier stint y solo estudia la ventana realista: las vueltas que da el depósito con "
+                  "consumo estándar ± 4 (se puede cambiar). Las vueltas que exigen ahorrar gasolina se marcan. "
                   "Positivo = ganas tiempo (el undercut funciona). Negativo = mejor quedarse fuera. "
                   "Cuenta la goma (calentamiento y desgaste) y la gasolina (tú sales cargado, él va cada vez más ligero)."))
         sub2.pack(fill="x", padx=20, pady=(2, 8))
@@ -956,10 +978,55 @@ class TyreStrategyModule(ctk.CTkFrame):
                                font=ctk.CTkFont(family="Segoe UI Mono", size=12, weight="bold"),
                                fg_color=C["input_bg"], border_color=C["border"])
         e_extra.pack(side="left")
-        ctk.CTkLabel(r3, text="0 = su goma tiene las vueltas de carrera", font=ctk.CTkFont(family="Segoe UI", size=10),
+        ctk.CTkLabel(r3, text="de goma y de gasolina gastada", font=ctk.CTkFont(family="Segoe UI", size=10),
                      text_color=C["text_secondary"]).pack(side="left", padx=(8, 0))
         e_extra.bind("<FocusOut>", lambda ev: self._plot_compare())
         e_extra.bind("<Return>", lambda ev: self._plot_compare())
+
+        b5 = ctk.CTkFrame(ctl, fg_color=C["bg_primary"], corner_radius=8, border_width=1, border_color=C["border"])
+        ctk.CTkLabel(b5, text="Gasolina con la que sales del box (L)", font=f_bold, text_color=C["text_primary"]).pack(anchor="w", padx=10, pady=(8, 4))
+        r5 = ctk.CTkFrame(b5, fg_color="transparent")
+        r5.pack(fill="x", padx=10, pady=(0, 8))
+        e_fuel = ctk.CTkEntry(r5, textvariable=self._var_uc_fuel, width=60, height=28, justify="center",
+                              font=ctk.CTkFont(family="Segoe UI Mono", size=12, weight="bold"),
+                              fg_color=C["input_bg"], border_color=C["border"])
+        e_fuel.pack(side="left")
+        ctk.CTkLabel(r5, text="vacío = depósito lleno", font=ctk.CTkFont(family="Segoe UI", size=10),
+                     text_color=C["text_secondary"]).pack(side="left", padx=(8, 0))
+        e_fuel.bind("<FocusOut>", lambda ev: self._plot_compare())
+        e_fuel.bind("<Return>", lambda ev: self._plot_compare())
+
+        b6 = ctk.CTkFrame(ctl, fg_color=C["bg_primary"], corner_radius=8, border_width=1, border_color=C["border"])
+        ctk.CTkLabel(b6, text="Ventana de parada en vueltas…", font=f_bold, text_color=C["text_primary"]).pack(anchor="w", padx=10, pady=(8, 4))
+        r6 = ctk.CTkFrame(b6, fg_color="transparent")
+        r6.pack(fill="x", padx=10, pady=(0, 8))
+        ent_kw = dict(width=52, height=28, justify="center", font=ctk.CTkFont(family="Segoe UI Mono", size=12, weight="bold"),
+                      fg_color=C["input_bg"], border_color=C["border"])
+        ctk.CTkLabel(r6, text="de", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C["text_secondary"]).pack(side="left", padx=(0, 4))
+        e_from = ctk.CTkEntry(r6, textvariable=self._var_uc_from, **ent_kw)
+        e_from.pack(side="left")
+        ctk.CTkLabel(r6, text="a", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C["text_secondary"]).pack(side="left", padx=4)
+        e_to = ctk.CTkEntry(r6, textvariable=self._var_uc_to, **ent_kw)
+        e_to.pack(side="left")
+        ctk.CTkButton(r6, text="Auto", width=52, height=28, fg_color=C["bg_secondary"], hover_color=C["border"],
+                      border_width=1, border_color=C["border"], font=f_bold,
+                      command=self._uc_window_auto).pack(side="left", padx=(8, 0))
+        for e in (e_from, e_to):
+            e.bind("<FocusOut>", lambda ev: self._on_uc_window_edited())
+            e.bind("<Return>", lambda ev: self._on_uc_window_edited())
+
+        b7 = ctk.CTkFrame(ctl, fg_color=C["bg_primary"], corner_radius=8, border_width=1, border_color=C["border"])
+        ctk.CTkLabel(b7, text="Gasolina al empezar el stint (L)", font=f_bold, text_color=C["text_primary"]).pack(anchor="w", padx=10, pady=(8, 4))
+        r7 = ctk.CTkFrame(b7, fg_color="transparent")
+        r7.pack(fill="x", padx=10, pady=(0, 8))
+        e_start = ctk.CTkEntry(r7, textvariable=self._var_uc_start, width=60, height=28, justify="center",
+                               font=ctk.CTkFont(family="Segoe UI Mono", size=12, weight="bold"),
+                               fg_color=C["input_bg"], border_color=C["border"])
+        e_start.pack(side="left")
+        ctk.CTkLabel(r7, text="vacío = depósito lleno", font=ctk.CTkFont(family="Segoe UI", size=10),
+                     text_color=C["text_secondary"]).pack(side="left", padx=(8, 0))
+        e_start.bind("<FocusOut>", lambda ev: self._plot_compare())
+        e_start.bind("<Return>", lambda ev: self._plot_compare())
 
         b4 = ctk.CTkFrame(ctl, fg_color=C["bg_primary"], corner_radius=8, border_width=1, border_color=C["border"])
         ctk.CTkLabel(b4, text="El rival para (vueltas después de ti)", font=f_bold, text_color=C["text_primary"]).pack(anchor="w", padx=10, pady=(8, 4))
@@ -970,7 +1037,7 @@ class TyreStrategyModule(ctk.CTkFrame):
         seg_d.set(delay_vals[0])
         seg_d.pack(fill="x", padx=10, pady=(0, 8))
 
-        self._uc_ctl_grid = ResponsiveGrid(ctl, [b1, b2, b3, b4], max_cols=4, min_col_width=250,
+        self._uc_ctl_grid = ResponsiveGrid(ctl, [b1, b2, b6, b3, b7, b5, b4], max_cols=4, min_col_width=250,
                                            grid_kw=dict(padx=5, pady=3, sticky="nsew"))
 
         ctk.CTkSwitch(
@@ -991,6 +1058,20 @@ class TyreStrategyModule(ctk.CTkFrame):
         self._uc_canvas = ZoomAwareFigureCanvas(self._uc_fig, master=uc_box)
         self._uc_canvas.draw()
         self._uc_canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+
+    def _uc_window_auto(self):
+        self._uc_manual = False
+        self._plot_compare()
+
+    def _on_uc_window_edited(self):
+        """Ventana manual: si no son dos números válidos se vuelve a la automática."""
+        try:
+            int(float(self._var_uc_from.get().replace(",", ".")))
+            int(float(self._var_uc_to.get().replace(",", ".")))
+            self._uc_manual = True
+        except ValueError:
+            self._uc_manual = False
+        self._plot_compare()
 
     def _compound_params(self, compound: str) -> dict:
         is_hard = (compound == "hard")
@@ -1026,6 +1107,7 @@ class TyreStrategyModule(ctk.CTkFrame):
 
     def _plot_compare(self):
         """Pinta las gráficas de comparativa (ritmo, acumulado) y la de poder de undercut."""
+        self._autosave_draft()
         if getattr(self, "_uc_canvas", None) is None:
             return
         tank, cons, sens = self._fuel_ctx()
@@ -1042,10 +1124,35 @@ class TyreStrategyModule(ctk.CTkFrame):
             extra = 0
         self._var_uc_extra.set(str(extra))
         delay = int(self._var_uc_delay.get() or 1)
+        fuel_txt = self._var_uc_fuel.get().strip().replace(",", ".")
+        try:
+            fuel_after = max(0.0, min(tank, float(fuel_txt))) if fuel_txt else None
+        except ValueError:
+            fuel_after = None
+            self._var_uc_fuel.set("")
         mine, rival = self._var_uc_mine.get(), self._var_uc_rival.get()
+        st_txt = self._var_uc_start.get().strip().replace(",", ".")
+        try:
+            start_fuel = max(0.0, min(tank, float(st_txt))) if st_txt else None
+        except ValueError:
+            start_fuel = None
+            self._var_uc_start.set("")
+        win_from = win_to = None
+        if self._uc_manual:
+            try:
+                win_from = int(float(self._var_uc_from.get().replace(",", ".")))
+                win_to = int(float(self._var_uc_to.get().replace(",", ".")))
+            except ValueError:
+                self._uc_manual = False
+        win = undercut_window(tank=tank, cons=cons, safety_fuel=safety, start_fuel=start_fuel, rival_extra_age=extra,
+                              rival_delay=delay, lap_from=win_from, lap_to=win_to)
+        # Las casillas muestran siempre la ventana que se está usando (automática o manual acotada)
+        self._var_uc_from.set(str(win["lo"]) if win["hi"] >= win["lo"] else "")
+        self._var_uc_to.set(str(win["hi"]) if win["hi"] >= win["lo"] else "")
 
         cold = bool(self._var_uc_cold.get())
-        key = repr((hard, soft, pts, tank, cons, sens, total_laps, safety, extra, delay, mine, rival, cold,
+        key = repr((hard, soft, pts, tank, cons, sens, safety, extra, delay, mine, rival, cold, fuel_after, start_fuel,
+                    win["lo"], win["hi"], win["manual"],
                     self._var_hard_r2.get(), self._var_soft_r2.get()))
         if key == self._cmp_key:
             return
@@ -1158,49 +1265,79 @@ class TyreStrategyModule(ctk.CTkFrame):
         P = {"hard": hard, "soft": soft}
         # Goma nueva: con o sin la pérdida de calentamiento de la vuelta de salida
         N = P if cold else {c: dict(P[c], warmup=0.0) for c in P}
-        kw = dict(tank=tank, cons=cons, sens=sens, total_laps=total_laps, rival_extra_age=extra,
-                  rival_delay=delay, safety_fuel=safety)
+        kw = dict(tank=tank, cons=cons, sens=sens, fuel_after=fuel_after, rival_extra_age=extra,
+                  rival_delay=delay, safety_fuel=safety, start_fuel=start_fuel,
+                  lap_from=win["lo"], lap_to=win["hi"])
         ul, ug = undercut_series(N[mine], P[rival], **kw)
         ax.axhline(0.0, color="#888888", linewidth=1.0)
+        SAVE_C = "#FFC857"
         if ul:
             g = np.array(ug)
             x = np.array(ul, dtype=float)
+            fr = [undercut_saving(l, win) for l in ul]
+            n_norm = sum(1 for f in fr if f <= 0.0)            # vueltas sin ahorro (van primero)
             ax.fill_between(x, 0.0, g, where=g >= 0, interpolate=True, color="#51CF66", alpha=0.20)
             ax.fill_between(x, 0.0, g, where=g <= 0, interpolate=True, color="#FF6B6B", alpha=0.14)
-            ax.plot(x, g, color=ACC, linewidth=2.6, marker="o", markersize=3.5,
-                    label=f"Tú {names[mine]} nueva · rival {names[rival]} usada")
+            lab = f"Tú {names[mine]} nueva · rival {names[rival]} usada"
+            if n_norm:
+                ax.plot(x[:n_norm], g[:n_norm], color=ACC, linewidth=2.6, marker="o", markersize=3.5, label=lab)
+            if n_norm < len(ul):
+                s0 = max(n_norm - 1, 0)       # el tramo con ahorro arranca unido al anterior
+                ax.plot(x[s0:], g[s0:], color=ACC, linewidth=2.2, linestyle=(0, (4, 2)), marker="o", markersize=3.5,
+                        markerfacecolor="#201005", label=None if n_norm else lab)
+                ax.axvspan(ul[n_norm] - 0.5, ul[-1] + 0.5, color=SAVE_C, alpha=0.10, zorder=0,
+                           label="Exige ahorrar gasolina (% sobre el consumo estándar)")
+                idx = list(range(n_norm, len(ul)))
+                for j in idx[::1 if len(idx) <= 12 else 2]:
+                    ax.annotate(f"{fr[j] * 100:.0f}%", (x[j], g[j]), xytext=(0, 8), textcoords="offset points",
+                                ha="center", fontsize=7.5, color=SAVE_C, fontweight="bold")
             if mine != rival:
                 ol, og = undercut_series(N[rival], P[mine], **kw)
                 ax.plot(ol, og, color="#9A9A9A", linewidth=1.6, linestyle="--",
                         label=f"Al revés: tú {names[rival]} nueva · rival {names[mine]} usada")
-            ax.set_xlim(0.5, ul[-1] + 0.5)
-            ax.legend(facecolor="#181818", edgecolor="#333333", labelcolor="#FFFFFF", fontsize=8.5, loc="best")
+            ax.set_xlim(ul[0] - 0.5, ul[-1] + 0.5)
+            ax.legend(facecolor="#181818", edgecolor="#333333", labelcolor="#FFFFFF", fontsize=8, loc="best")
 
-            good = [l for l, val in zip(ul, ug) if val > 0]
-            i_best = int(np.argmax(g))
-            if not good:
-                txt = (f"Con estos datos el undercut no funciona en ninguna vuelta: pierdes como mínimo "
-                       f"{abs(g[i_best]):.2f} s (V{ul[i_best]}). Mejor quedarse fuera (overcut).")
-            elif len(good) == len(ul):
-                txt = f"El undercut funciona en cualquier vuelta. Máximo: +{g[i_best]:.2f} s parando en V{ul[i_best]}."
-            else:
-                runs, start, prev = [], good[0], good[0]
-                for l in good[1:]:
+            def _runs(ls):
+                runs, start, prev = [], ls[0], ls[0]
+                for l in ls[1:]:
                     if l != prev + 1:
                         runs.append((start, prev))
                         start = l
                     prev = l
                 runs.append((start, prev))
-                rng = ", ".join(f"V{a}" if a == b else f"V{a}–V{b}" for a, b in runs)
-                txt = (f"El undercut funciona si paras en {rng} (máximo +{g[i_best]:.2f} s en V{ul[i_best]}). "
-                       f"En el resto de vueltas es mejor quedarse fuera.")
-            self._lbl_uc_summary.configure(text=txt)
+                return ", ".join(f"V{p}" if p == q else f"V{p}–V{q}" for p, q in runs)
+
+            parts = [f"Ventana estudiada: vueltas {win['lo']}–{win['hi']} del stint "
+                     f"({'manual' if win['manual'] else 'automática'}; el depósito da {win['n_std']} vueltas a consumo estándar)."]
+            seg_n = [(l, v) for l, v, f in zip(ul, ug, fr) if f <= 0.0]
+            seg_s = [(l, v, f) for l, v, f in zip(ul, ug, fr) if f > 0.0]
+            if seg_n:
+                gn = [l for l, v in seg_n if v > 0]
+                best = max(seg_n, key=lambda t: t[1])
+                if gn:
+                    parts.append(f"Con consumo normal funciona si paras en {_runs(gn)} (máximo +{best[1]:.2f} s en V{best[0]}).")
+                else:
+                    parts.append(f"Con consumo normal no funciona en ninguna vuelta de la ventana (lo mejor: {best[1]:+.2f} s en V{best[0]}).")
+            if seg_s:
+                gs = [l for l, v, f in seg_s if v > 0]
+                bests = max(seg_s, key=lambda t: t[1])
+                fmin, fmax = seg_s[0][2] * 100, seg_s[-1][2] * 100
+                if gs:
+                    parts.append(f"Si ahorras gasolina ({fmin:.0f}–{fmax:.0f} %) funciona en {_runs(gs)} "
+                                 f"(máximo +{bests[1]:.2f} s en V{bests[0]}), sin contar el tiempo que pierdes por ahorrar.")
+                else:
+                    parts.append(f"Ahorrando ({fmin:.0f}–{fmax:.0f} %) tampoco funciona en ninguna vuelta de la ventana.")
+            if win["clamped"]:
+                parts.append(f"Ventana recortada: el máximo posible con un 20 % de ahorro es la vuelta {win['lmax']}.")
+            self._lbl_uc_summary.configure(text=" ".join(parts))
         else:
-            self._lbl_uc_summary.configure(text="Faltan datos de combustible para calcular el undercut.")
+            self._lbl_uc_summary.configure(text="Con esa gasolina y ese consumo no hay ninguna vuelta de parada posible: "
+                                                "revisa el consumo o la gasolina al empezar el stint.")
         when = "la vuelta siguiente" if delay == 1 else f"las {delay} vueltas siguientes"
         ax.set_title(f"3 · Poder de undercut: tiempo ganado al rival en {when} a tu parada",
                      color="#FFFFFF", fontsize=10.5, fontweight="bold", loc="left", pad=10)
-        ax.set_xlabel("Vuelta de carrera en la que paras", color="#A0A0A0", fontsize=9.5, labelpad=6)
+        ax.set_xlabel("Vuelta de stint en la que paras", color="#A0A0A0", fontsize=9.5, labelpad=6)
         ax.set_ylabel("Ganancia (s) · positivo = funciona", color="#A0A0A0", fontsize=9.5, labelpad=8)
 
         if self.winfo_viewable():
@@ -1986,6 +2123,8 @@ class TyreStrategyModule(ctk.CTkFrame):
         if t_path and t_path.exists():
             try:
                 data = json.loads(t_path.read_text(encoding="utf-8"))
+                if data.get("draft"):
+                    return {}
                 model_name = data.get("active_model", "Modelo 1")
                 legacy_models = {model_name: data}
                 if m_path:
@@ -2005,6 +2144,13 @@ class TyreStrategyModule(ctk.CTkFrame):
                 self._var_selected_tyre_model.set(vals[0])
 
     def _apply_tyre_model_data(self, data: dict):
+        self._loading += 1
+        try:
+            self._apply_tyre_model_data_inner(data)
+        finally:
+            self._loading -= 1
+
+    def _apply_tyre_model_data_inner(self, data: dict):
         self._var_hard_base_lap.set(data.get("hard_base_lap", "01:24.500"))
         self._var_hard_warmup.set(data.get("hard_warmup", "0.800"))
         self._var_hard_a.set(data.get("hard_a", "0.2223"))
@@ -2034,14 +2180,34 @@ class TyreStrategyModule(ctk.CTkFrame):
 
         self.recalculate_and_plot()
 
-    def _on_tyre_model_selected(self, name: str):
+    def _on_tyre_model_selected(self, name: str, confirm: bool = True):
+        if confirm and self._is_dirty():
+            if not messagebox.askyesno(
+                "Cambios sin guardar",
+                "Hay vueltas o ajustes de neumáticos sin guardar en un modelo.\n"
+                "Si cargas otro modelo (o recargas) se perderán.\n\n¿Descartarlos?",
+                icon="warning",
+            ):
+                self._var_selected_tyre_model.set(self._active_model_name)
+                return
+        self._load_selected_model(name)
+        self._active_model_name = name
+        self._clean_data = self._current_data()
+        self._last_draft_key = None
+        if self._draft_on_disk or name in self.saved_tyre_models:
+            if self._write_active(self._clean_data, name, draft=False):
+                self._draft_on_disk = False
+        self._update_dirty_label(False)
+
+    def _load_selected_model(self, name: str):
         if name == "⚡ Modelo Base":
             t_path = self._get_profile_path()
             if t_path and t_path.exists():
                 try:
                     data = json.loads(t_path.read_text(encoding="utf-8"))
-                    self._apply_tyre_model_data(data)
-                    return
+                    if not data.get("draft"):
+                        self._apply_tyre_model_data(data)
+                        return
                 except Exception:
                     pass
             circ_base = float(self.session_data.get("lap_time_seconds", 84.5))
@@ -2154,26 +2320,12 @@ class TyreStrategyModule(ctk.CTkFrame):
             ],
         }
 
-    def save_tyre_profile(self):
-        """Guarda el modelo de neumáticos actual con un nombre."""
-        m_path = self._get_tyre_models_path()
-        if not m_path:
-            messagebox.showwarning("Sin sesión", "Guarda primero un campeonato y circuito en el Módulo 1.")
-            return
-
-        curr = self._var_selected_tyre_model.get()
-        dialog = ctk.CTkInputDialog(
-            text=f"Nombre identificativo del modelo de neumáticos:\n(Circuito: {self.session_data.get('circuit')})",
-            title="Guardar Modelo de Neumáticos"
-        )
-        name = dialog.get_input()
-        if not name or not name.strip():
-            return
-        name = name.strip()
-
-        for comp in ("hard", "soft"):
-            self._ensure_laps(comp, force=True)
-        data = {
+    def _current_data(self, force: bool = False) -> dict:
+        """Estado actual del módulo en el formato de los perfiles (_tyres.json / _tyre_models.json)."""
+        if force:
+            for comp in ("hard", "soft"):
+                self._ensure_laps(comp, force=True)
+        return {
             "hard_base_lap": self._var_hard_base_lap.get(),
             "hard_warmup": self._var_hard_warmup.get(),
             "hard_a": self._var_hard_a.get(),
@@ -2193,6 +2345,86 @@ class TyreStrategyModule(ctk.CTkFrame):
             "stint3_tyre": self._var_stint3_tyre.get(),
         }
 
+    @staticmethod
+    def _data_key(data: dict) -> str:
+        """Clave para comparar estados. Los puntos (x, delta) de compatibilidad se derivan de las
+        vueltas con tiempo y del consumo de gasolina, así que no cuentan como cambio propio."""
+        d = dict(data)
+        for comp in ("hard", "soft"):
+            if d.get(f"{comp}_stint_laps"):
+                d.pop(f"{comp}_test_points", None)
+        return json.dumps(d, sort_keys=True, ensure_ascii=False)
+
+    def _is_dirty(self) -> bool:
+        """Hay cambios que no están guardados en un modelo."""
+        if self._clean_data is None:
+            return self._draft_on_disk
+        return self._data_key(self._current_data()) != self._data_key(self._clean_data)
+
+    def _update_dirty_label(self, dirty: bool):
+        lbl = getattr(self, "_lbl_dirty", None)
+        if lbl is not None:
+            lbl.configure(text="● Cambios sin guardar (se conservan al reabrir)" if dirty else "")
+
+    def _write_active(self, data: dict, name: str, draft: bool) -> bool:
+        """Escribe <circuito>_tyres.json: el modelo activo, o un borrador si draft=True."""
+        t_path = self._get_profile_path()
+        if not t_path:
+            return False
+        out = dict(data)
+        out["active_model"] = name
+        if draft:
+            out["draft"] = True
+        try:
+            t_path.parent.mkdir(parents=True, exist_ok=True)
+            t_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+            return True
+        except OSError:
+            return False
+
+    def _autosave_draft(self):
+        """Guarda al momento cualquier cambio como borrador (solo escribe si algo ha cambiado)."""
+        if self._loading or not self._get_profile_path():
+            return
+        data = self._current_data()
+        key = self._data_key(data)
+        name = self._var_selected_tyre_model.get()
+        if self._clean_data is not None and key == self._data_key(self._clean_data):
+            # Ha vuelto al estado guardado: se retira el borrador
+            if self._draft_on_disk and self._write_active(self._clean_data, name, draft=False):
+                self._draft_on_disk = False
+            self._last_draft_key = None
+            self._update_dirty_label(False)
+            return
+        if self._clean_data is None and not self._draft_on_disk and self._last_draft_key is None:
+            # Circuito sin nada guardado: el primer estado es la referencia
+            self._clean_data = data
+            return
+        if key != self._last_draft_key:
+            if self._write_active(data, name, draft=True):
+                self._draft_on_disk = True
+                self._last_draft_key = key
+        self._update_dirty_label(True)
+
+    def save_tyre_profile(self):
+        """Guarda el modelo de neumáticos actual con un nombre."""
+        m_path = self._get_tyre_models_path()
+        if not m_path:
+            messagebox.showwarning("Sin sesión", "Guarda primero un campeonato y circuito en el Módulo 1.")
+            return
+
+        curr = self._var_selected_tyre_model.get()
+        dialog = ctk.CTkInputDialog(
+            text=f"Nombre identificativo del modelo de neumáticos:\n(Circuito: {self.session_data.get('circuit')})",
+            title="Guardar Modelo de Neumáticos"
+        )
+        name = dialog.get_input()
+        if not name or not name.strip():
+            return
+        name = name.strip()
+
+        data = self._current_data(force=True)
+
         self.saved_tyre_models[name] = data
         m_path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -2206,6 +2438,11 @@ class TyreStrategyModule(ctk.CTkFrame):
 
             self._refresh_tyre_models_list()
             self._var_selected_tyre_model.set(name)
+            self._active_model_name = name
+            self._clean_data = self._current_data()
+            self._draft_on_disk = False
+            self._last_draft_key = None
+            self._update_dirty_label(False)
             messagebox.showinfo("Guardado", f"Modelo de neumáticos '{name}' guardado correctamente para:\n{self.session_data.get('circuit')}")
         except Exception as e:
             messagebox.showerror("Error al guardar", str(e))
@@ -2213,25 +2450,49 @@ class TyreStrategyModule(ctk.CTkFrame):
     def load_tyre_profile(self) -> bool:
         """Carga el modelo de neumáticos activo para el campeonato+circuito activo."""
         self._refresh_tyre_models_list()
+        self._draft_on_disk = False
+        self._last_draft_key = None
+        self._clean_data = None
+        found = self._load_profile_state()
+        if self._clean_data is None and not self._draft_on_disk:
+            self._clean_data = self._current_data()
+        self._update_dirty_label(self._is_dirty())
+        return found
+
+    def _load_profile_state(self) -> bool:
         t_path = self._get_profile_path()
         if t_path and t_path.exists():
             try:
                 data = json.loads(t_path.read_text(encoding="utf-8"))
                 active_name = data.get("active_model")
+                saved = self.saved_tyre_models.get(active_name) if active_name else None
                 if active_name and active_name in self.saved_tyre_models:
                     self._var_selected_tyre_model.set(active_name)
-                    self._apply_tyre_model_data(self.saved_tyre_models[active_name])
-                    return True
-                else:
+                    self._active_model_name = active_name
+                if data.get("draft"):
+                    # Borrador de la sesión anterior: la referencia «guardada» es el modelo con ese nombre
+                    if saved:
+                        self._apply_tyre_model_data(saved)
+                        self._clean_data = self._current_data()
                     self._apply_tyre_model_data(data)
+                    self._draft_on_disk = True
                     return True
+                if active_name and active_name in self.saved_tyre_models:
+                    self._apply_tyre_model_data(saved)
+                    self._clean_data = self._current_data()
+                    return True
+                self._apply_tyre_model_data(data)
+                self._clean_data = self._current_data()
+                return True
             except Exception:
                 pass
 
         if self.saved_tyre_models:
             first_name = list(self.saved_tyre_models.keys())[0]
             self._var_selected_tyre_model.set(first_name)
+            self._active_model_name = first_name
             self._apply_tyre_model_data(self.saved_tyre_models[first_name])
+            self._clean_data = self._current_data()
             return True
 
         return False
@@ -2271,7 +2532,7 @@ class TyreStrategyModule(ctk.CTkFrame):
                 m_path.write_text(json.dumps(self.saved_tyre_models, ensure_ascii=False, indent=2), encoding="utf-8")
             self._refresh_tyre_models_list()
             self._var_selected_tyre_model.set("⚡ Modelo Base")
-            self._on_tyre_model_selected("⚡ Modelo Base")
+            self._on_tyre_model_selected("⚡ Modelo Base", confirm=False)
             messagebox.showinfo("Eliminado", f"Modelo de neumáticos '{name}' eliminado exitosamente.")
 
     # ═══════════════════════════════════════════════════════════
@@ -2323,6 +2584,7 @@ class TyreStrategyModule(ctk.CTkFrame):
         self.fuel_data = fuel_data
         # Con el consumo y el efecto peso del circuito activo ya se pueden convertir los
         # perfiles antiguos a tiempos de vuelta y recalcular los deltas de goma mostrados.
+        was_clean = not self._is_dirty()
         self._fuel_ctx_fresh = True
         for comp in ("hard", "soft"):
             was_legacy = self._legacy[comp]
@@ -2331,6 +2593,8 @@ class TyreStrategyModule(ctk.CTkFrame):
                 self._render_test_points(comp)
             else:
                 self._refresh_delta_labels(comp)
+        if was_clean and self._clean_data is not None:
+            self._clean_data = self._current_data()
 
         trunc_laps = fuel_data.get("truncated_laps", 43)
         self._var_total_laps.set(trunc_laps)
